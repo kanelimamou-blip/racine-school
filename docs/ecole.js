@@ -294,6 +294,34 @@ const Ecole = (() => {
       mettre("edt", c.id, { cid: c.id, classe: c.nom, creneaux: plages.map(([jour, debut, fin], k) => { const m = mats[(k + ci) % mats.length]; return { jour, debut, fin, sid: m.id, matiere: m.name, prof: profs[m.id], salle: "Salle " + (ci + 1) }; }) });
       mats.forEach((m) => { const n = programmeDe(m.id).length; if (n) mettre("progressions", `${c.id}_${m.id}`, { cid: c.id, sid: m.id, faits: [...Array(Math.floor(n * (0.05 + rnd() * 0.3))).keys()], par: "demo", parNom: profs[m.id], le: t(-Math.floor(rnd() * 10)) }); });
     });
+    // registres : quelques lignes dans chacun
+    const el = (i) => eleves[ids[i % ids.length]], ref = (i) => ({ eleveId: el(i).id, eleveNom: `${el(i).prenom} ${el(i).nom}`, classe: el(i).classe });
+    const R = (id, x) => mettre("registres", "demo-r" + id, { par: "demo", parNom: "M. Modou Ndiaye", le: today(), ...x });
+    R(1, { reg: "discipline", ...ref(11), date: t(-2), type: "Bavardage", texte: "Bavardages répétés en cours de français.", sanction: "Mot aux parents" });
+    R(2, { reg: "discipline", ...ref(11), date: t(-1), type: "Insolence", texte: "A répondu au professeur.", sanction: "Retenue" });
+    R(3, { reg: "discipline", ...ref(40), date: today(), type: "Tenue non conforme", texte: "", sanction: "Avertissement oral" });
+    R(4, { reg: "maincourante", date: today(), heure: "10:20", categorie: "Infirmerie", ...ref(23), texte: "Maux de tête, a pris du repos 30 minutes." });
+    R(5, { reg: "maincourante", date: t(-1), heure: "12:05", categorie: "Objet trouvé", eleveNom: "", texte: "Calculatrice Casio trouvée dans la cour." });
+    R(6, { reg: "planning", date: today(), debut: "07:30", fin: "08:15", lieu: "Portail", personne: "M. Modou Ndiaye" });
+    R(7, { reg: "planning", date: today(), debut: "10:00", fin: "10:15", lieu: "Cour", personne: "M. Modou Ndiaye" });
+    [["Ramettes de papier et craies", "Fournitures", 85000, "Librairie Clairafrique"], ["Facture Senelec", "Électricité et eau", 142000, "Senelec"], ["Réparation de tables-bancs", "Entretien et réparations", 60000, "Menuiserie Ndiaye"]]
+      .forEach(([libelle, categorie, montant, fournisseur], i) => R(10 + i, { reg: "depenses", date: t(-3 * i - 1), libelle, categorie, montant, fournisseur, parNom: "M. Lamine Kane" }));
+    [["Mme Awa Gueye", 150000, 20000], ["M. Lamine Kane", 175000, 0], ["M. Modou Ndiaye", 140000, 30000]].forEach(([personne, brut, avance], i) => R(20 + i, { reg: "paie", mois: ceMois(), personne, brut, avance, net: brut - avance, paye: "" }));
+    [["Tables-bancs", "Mobilier", 420, "Bon", "Toutes les salles"], ["Ordinateurs", "Informatique", 12, "À réparer", "Salle informatique"], ["Vidéoprojecteur", "Informatique", 2, "Bon", "Bureau de la direction"], ["Manuels de maths 3e", "Manuels", 60, "Bon", "Bibliothèque"]]
+      .forEach(([article, categorie, quantite, etat, lieu], i) => R(30 + i, { reg: "inventaire", article, categorie, quantite, etat, lieu }));
+    R(40, { reg: "services", ...ref(5), service: "Cantine", formule: "Déjeuner du lundi au vendredi", montant: 10000, paye: ceMois() });
+    R(41, { reg: "services", ...ref(17), service: "Transport scolaire", formule: "Ligne Parcelles – école", montant: 15000, paye: "" });
+    R(50, { reg: "courrier", date: t(-4), sens: "Entrant", tiers: "Inspection d'académie", objet: "Calendrier des examens blancs", ref: "IA/2026/114" });
+    R(51, { reg: "bibliotheque", livre: "Une si longue lettre (Mariama Bâ)", ...ref(30), date: t(-20), retour: t(-6), rendu: "Prêté" });
+    R(52, { reg: "bibliotheque", livre: "L'Aventure ambiguë (Cheikh Hamidou Kane)", ...ref(31), date: t(-5), retour: t(9), rendu: "Prêté" });
+    R(60, { reg: "taches", titre: "Réparer la porte de la salle 4", personne: "M. Lamine Kane", echeance: t(2), statut: "À faire", parNom: "M. Babacar Sy" });
+    R(61, { reg: "taches", titre: "Imprimer les sujets de composition", personne: "Mme Awa Gueye", echeance: t(20), statut: "En cours", parNom: "M. Babacar Sy" });
+    R(70, { reg: "heures", date: t(-1), classe: "6e A", heures: 2, objet: "Cours de soutien", par: "demo", parNom: "Mme Aminata Diallo" });
+    [["Mme Awa Gueye", "07:42", ""], ["M. Lamine Kane", "07:55", ""], ["M. Modou Ndiaye", "07:20", ""], ["Mme Aminata Diallo", "07:50", ""]].forEach(([nom, arrivee], i) => R(80 + i, { reg: "pointage", date: today(), nom, arrivee }));
+    mettre("preinscriptions", "demo-p1", { prenom: "Khadija", nom: "Sarr", naissance: "2015-05-12", ecole: "École Liberté 6", parent: "Mme Sarr", tel: "77 000 88 01", classe: "6e", statut: "Nouvelle", le: t(-1) });
+    mettre("preinscriptions", "demo-p2", { prenom: "Babacar", nom: "Ndour", naissance: "2011-11-02", ecole: "CEM de Grand-Yoff", parent: "M. Ndour", tel: "77 000 88 02", classe: "2nde", statut: "Liste d'attente", le: t(-6) });
+    // retards de la semaine au portail, pour les seuils
+    [1, 2, 3].forEach((k) => mettre("portail", t(-k), { date: t(-k), retards: { [ids[11]]: "08:0" + k, [ids[23]]: "07:5" + k } }));
     mettre("absprofs", "demo-ab0", { profNom: "M. Ousmane Sarr", date: today(), motif: "Raison de santé", remplacant: "", classes: "6e A, 5e C", par: "demo" });
     mettre("absprofs", "demo-ab1", { profNom: "Mme Khady Fall", date: t(3), motif: "Formation à l'inspection", remplacant: "Mme Aminata Diallo", classes: "4e B, 3e A", par: "demo" });
     L.col = col;
@@ -351,7 +379,8 @@ function viewRole(err = "") {
       <button class="btn alt role" data-r="surveillant">🛡️ Surveillant<span class="small">Avec la clé d'entrée des surveillants</span></button>
       <button class="btn alt role" data-r="personnel">🗂️ Personnel<span class="small">Secrétariat, caisse, intendance</span></button>
       <button class="btn alt role" data-r="directeur">🏫 Direction<span class="small">Avec la clé d'entrée de la direction</span></button>
-    </div>${err ? `<p class="msg-ko small">${esc(err)}</p>` : ""}`;
+    </div><button class="btn alt" id="preins">📝 Pré-inscrire un enfant (nouvel élève)</button>${err ? `<p class="msg-ko small">${esc(err)}</p>` : ""}`;
+  document.getElementById("preins").onclick = () => viewPreinscription();
   $view.querySelectorAll(".role").forEach((b) => b.onclick = () => {
     if (b.dataset.r === "eleve") { S.role = "eleve"; store.save(); return go("inscription"); }
     if (b.dataset.r === "parent") { S.role = "parent"; store.save(); return go("ecole"); }
@@ -442,15 +471,15 @@ function ficheCard() {
 
 // ---------- Espace école (équipe et parents)
 const ONGLETS = {
-  directeur: [["", "Tableau"], ["eleves", "Élèves"], ["paiements", "Paiements"], ["bulletins", "Bulletins"], ["edt", "Emploi du temps"], ["programme", "Programme"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["equipe", "Équipe"], ["reglages", "Réglages"]],
-  prof: [["", "Mes classes"], ["appel", "Appel"], ["notes", "Notes"], ["programme", "Programme"], ["quiz", "Quiz en classe"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
-  surveillant: [["", "Aujourd'hui"], ["portail", "Portail"], ["eleves", "Élèves"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
-  personnel: [["", "Caisse"], ["eleves", "Élèves"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
+  directeur: [["", "Tableau"], ["eleves", "Élèves"], ["paiements", "Paiements"], ["bulletins", "Bulletins"], ["edt", "Emploi du temps"], ["programme", "Programme"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["registres", "Registres"], ["equipe", "Équipe"], ["reglages", "Réglages"]],
+  prof: [["", "Mes classes"], ["appel", "Appel"], ["notes", "Notes"], ["programme", "Programme"], ["quiz", "Quiz en classe"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["registres", "Registres"], ["equipe", "Annuaire"]],
+  surveillant: [["", "Aujourd'hui"], ["portail", "Portail"], ["eleves", "Élèves"], ["registres", "Registres"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
+  personnel: [["", "Caisse"], ["eleves", "Élèves"], ["registres", "Registres"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
   parent: [["", "Mon enfant"], ["annonces", "Annonces"]],
 };
 const TITRES = { directeur: "Direction", prof: "Espace professeur", surveillant: "Vie scolaire", personnel: "Administration", parent: "Espace parent" };
 // pages ouvertes depuis une autre (fiche d'un élève, reçu, certificat), selon le profil
-const SOUS_PAGES = { directeur: ["eleve", "recu", "certificat", "notes", "bulletin"], prof: ["eleve", "eleves", "bulletins", "bulletin"], surveillant: ["eleve"], personnel: ["eleve", "recu", "certificat", "paiements"], parent: ["recu", "bulletin"] };
+const SOUS_PAGES = { directeur: ["eleve", "recu", "certificat", "notes", "bulletin", "registre", "convocation"], prof: ["eleve", "eleves", "bulletins", "bulletin", "registre"], surveillant: ["eleve", "registre", "convocation"], personnel: ["eleve", "recu", "certificat", "paiements", "registre"], parent: ["recu", "bulletin"] };
 const ongletsEcole = (actif) => `<div class="row onglets noprint">${(ONGLETS[S.role] || []).map(([k, l]) => `<a class="btn alt small${k === actif ? " on" : ""}" href="#ecole${k ? "/" + k : ""}">${l}</a>`).join("")}</div>`;
 async function viewEcole() {
   const [, sub = "", arg = "", arg2 = ""] = location.hash.slice(1).split("/").map(decodeURIComponent);
@@ -465,12 +494,12 @@ async function viewEcole() {
       equipe && role !== "personnel" ? Ecole.lire("portail", today()).catch(() => null) : null, equipe ? Ecole.liste("annuaire").catch(vide) : []]);
     const ctx = { cfg, eleves: rattacher(cfg, eleves).sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom)), devoirs: rattacher(cfg, devoirs), pay,
       annonces: annonces.sort((a, b) => String(b.le).localeCompare(String(a.le))), appels, portail: (portail && portail.retards) || {}, annuaire };
-    const actif = { eleve: "eleves", recu: role === "parent" ? "" : "paiements", certificat: "eleves", bulletin: { parent: "", prof: "notes" }[role] ?? "bulletins", bulletins: role === "prof" ? "notes" : "bulletins", notes: role === "prof" ? "notes" : "bulletins" }[sub] ?? sub;
+    const actif = { eleve: "eleves", recu: role === "parent" ? "" : "paiements", certificat: "eleves", registre: "registres", convocation: "", bulletin: { parent: "", prof: "notes" }[role] ?? "bulletins", bulletins: role === "prof" ? "notes" : "bulletins", notes: role === "prof" ? "notes" : "bulletins" }[sub] ?? sub;
     const head = `<div class="row noprint"><h1>${titre}</h1><span class="small muted">${role === "parent" ? "" : esc(S.staffNom || "")}</span></div>
       ${Ecole.isDemo ? `<p class="demo small noprint">Démonstration : élèves et équipe fictifs. ${role === "directeur" ? `<button class="linkbtn" id="demo-off">Effacer la démo</button>` : ""}</p>` : ""}${ongletsEcole(actif)}`;
     const views = {
-      "": { directeur: vueEnsemble, prof: vueProfAccueil, surveillant: vueAujourdhui, personnel: vueCaisse, parent: vueParent }[role],
-      eleves: vueEleves, eleve: vueFiche, paiements: vuePaiements, devoirs: vueDevoirs, reglages: vueReglages,
+      "": { directeur: vueEnsemble, prof: vueProfAccueil, surveillant: vueAujourdhuiComplet, personnel: vueCaisse, parent: vueParent }[role],
+      eleves: vueEleves, eleve: vueFiche, paiements: vuePaiementsComplet, registres: vueRegistres, registre: vueRegistre, convocation: vueConvocation, devoirs: vueDevoirs, reglages: vueReglages,
       annonces: vueAnnonces, equipe: vueEquipeComplete, edt: vueEdt, programme: vueProgramme, appel: vueAppel, quiz: vueQuiz, portail: vuePortail, recu: vueRecu, certificat: vueCertificat,
       notes: vueNotes, bulletins: vueBulletins, bulletin: vueBulletin,
     };
