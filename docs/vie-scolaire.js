@@ -223,11 +223,12 @@ function vueCertificat(ctx, id) {
 // ---------- Quiz en classe (professeur) : au tableau, ou sur les téléphones avec classement en direct
 function vueQuiz(ctx) {
   const { cfg } = ctx, mine = mesClassesProf(cfg), classes = mine.length ? mine : cfg.classes, c = classes[0];
-  return `<div class="card"><h2>Quiz en classe</h2><p class="small muted">10 questions tirées des QCM corrigés de l'appli, dans la matière de ton choix.</p>
+  return `<div class="card noprint"><h2>Quiz en classe</h2><p class="small muted">10 questions tirées des QCM corrigés de l'appli, dans la matière de ton choix.</p>
       <label class="small">Classe<select class="field" id="qcl">${classes.map((x) => `<option value="${esc(x.id)}">${esc(x.nom)}</option>`).join("")}</select></label>
       <label class="small">Matière<span id="qmat">${matieresQuiz(c && c.level)}</span></label>
       <button class="btn" id="qtab">Projeter au tableau</button>
-      <button class="btn alt" id="qtel">Lancer sur les téléphones des élèves</button></div><div id="qzone"></div>`;
+      <button class="btn alt" id="qtel">Lancer sur les téléphones des élèves</button>
+      <div class="row"><button class="btn alt" id="qprint">🖨️ Imprimer une interrogation et son corrigé</button><select class="field" id="qnb" style="max-width:90px" aria-label="Nombre de questions">${[5, 10, 15, 20].map((n) => `<option${n === 10 ? " selected" : ""}>${n}</option>`).join("")}</select></div></div><div id="qzone"></div>`;
 }
 const matieresQuiz = (level) => `<select class="field" id="qsid">${subjectsOf(level || "6e").filter((s) => !/annales/.test(s.id) && DATA.questions.some((q) => q.s === s.id)).map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select>`;
 
@@ -256,6 +257,7 @@ async function vueParent(ctx) {
     ${(() => { const b = moyennesEleve(ctx.cfg, notesEnf.filter((x) => x.trimestre === "1"), id); return `<div class="card"><div class="row"><h2>Notes du 1er trimestre</h2><b class="count">${n2(b.gen)}</b></div>
       ${b.mats.map((m) => `<div class="row small"><span>${esc(m.matiere)}</span><b>${n2(m.moy)}</b></div>`).join("") || `<p class="small muted">Pas encore de notes.</p>`}
       <a class="btn alt small" href="#ecole/bulletin/${encodeURIComponent(id)}/1">📑 Voir le bulletin</a></div>`; })()}
+    ${await assiduiteCarte(id)}
     <div class="card"><h2>Révisions dans l'appli</h2>
       <div class="row"><div><p class="small muted">Réponses</p><p class="count">${st.rep || 0}</p></div><div><p class="small muted">Réussite</p><p class="count">${reussite(f) ?? 0} %</p></div><div><p class="small muted">Jours actifs (7 j)</p><p class="count">${st.jours7 || 0}</p></div></div>
       <p class="small muted">Dernière révision : ${st.derniere ? dateFr(st.derniere) : "jamais"}${st.moy !== null && st.moy !== undefined ? ` · moyenne aux quiz : ${String(st.moy).replace(".", ",")} / 20` : ""}</p>
@@ -283,12 +285,12 @@ async function remplirAccueilEleve() {
   const el = document.getElementById("ecole-accueil");
   if (!el || S.role !== "eleve" || !S.fiche) return;
   verifierNouveautes().catch(() => {});
-  const [annonces, seances, edt] = await Promise.all([Ecole.liste("annonces").catch(() => []), Ecole.liste("seances", "cid", S.fiche.classeId).catch(() => []), edtDuJour().catch(() => "")]);
+  const [annonces, seances, edt, defi] = await Promise.all([Ecole.liste("annonces").catch(() => []), Ecole.liste("seances", "cid", S.fiche.classeId).catch(() => []), edtDuJour().catch(() => ""), defiCarteEleve().catch(() => "")]);
   const recent = (d) => (new Date(today()) - new Date(d)) / 864e5 <= 3;
   const vus = seances.filter((s) => recent(s.date)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
   const ann = annoncesPour(annonces).sort((a, b) => String(b.le).localeCompare(String(a.le))).slice(0, 2);
   if (!document.body.contains(el)) return;
-  el.innerHTML = `${edt}${vus.length ? `<div class="card"><h2>📘 Vu en classe</h2>${vus.map((s) => `<div class="row small"><span><b>${esc(s.matiere || "")}</b> : ${esc(s.titre)}<br><span class="muted">${s.date === today() ? "aujourd'hui" : jourFr(s.date)}</span></span>${s.sid ? `<a class="btn alt small" href="#quiz/${s.sid}">Réviser</a>` : ""}</div>`).join("")}<a class="small" href="#cahier">Tout le cahier de textes ›</a></div>` : ""}
+  el.innerHTML = `<div class="grid rub espace">${[["rendre", "📤", "Rendre un devoir"], ["assiduite", "📅", "Absences"], ["badges", "🏅", "Mes badges"], ["clubs", "🎭", "Clubs"], ["orientation", "🧭", "Orientation"], ["documents", "📂", "Documents"]].map(([h, i, t]) => `<a class="subj tile" href="#${h}"><span class="ico">${i}</span><b>${t}</b></a>`).join("")}</div>${edt}${defi}${vus.length ? `<div class="card"><h2>📘 Vu en classe</h2>${vus.map((s) => `<div class="row small"><span><b>${esc(s.matiere || "")}</b> : ${esc(s.titre)}<br><span class="muted">${s.date === today() ? "aujourd'hui" : jourFr(s.date)}</span></span>${s.sid ? `<a class="btn alt small" href="#quiz/${s.sid}">Réviser</a>` : ""}</div>`).join("")}<a class="small" href="#cahier">Tout le cahier de textes ›</a></div>` : ""}
     ${ann.length ? `<div class="card"><h2>📢 Annonces de l'école</h2>${ann.map((a) => `<p class="small"><b>${esc(a.titre)}</b>${a.date ? ` · ${jourFr(a.date)}` : ""}<br><span class="muted">${esc(a.texte || "")}</span></p>`).join("")}</div>` : ""}`;
 }
 
@@ -379,13 +381,14 @@ Object.assign(bindEcole, {
       if (retards[f.id]) { msg.className = "small"; msg.textContent = `${nomComplet(f)} est déjà noté à ${retards[f.id]}.`; return; }
       retards[f.id] = h; ctx.portail = retards;
       await Ecole.ecrire("portail", today(), { date: today(), retards }).catch(() => {});
+      noterAssiduite([f.id], () => "R", f.classe);
       msg.className = "msg-ok small"; msg.textContent = `✓ ${nomComplet(f)} (${f.classe}) : retard noté à ${h}.`;
       if (!camStop) setTimeout(viewEcole, 900);
     };
     chercheEleve(ctx, "pq", "pres", noter);
     $view.querySelectorAll(".prm").forEach((b) => b.onclick = async () => {
       const retards = { ...(ctx.portail || {}) }; delete retards[b.dataset.id];
-      await Ecole.ecrire("portail", today(), { date: today(), retards }).catch(() => {}); viewEcole();
+      await Ecole.ecrire("portail", today(), { date: today(), retards }).catch(() => {}); await noterAssiduite([b.dataset.id], () => "", ""); viewEcole();
     });
     const scan = document.getElementById("scan");
     if (scan) scan.onclick = async () => {

@@ -42,6 +42,9 @@ const REG = {
   heures: { titre: "Heures effectuées", ico: "⏱️", roles: OUI_ROLES("directeur", "prof"), total: "heures", perso: true,
     champs: [["date", "Date", "date"], ["classe", "Classe", "classe"], ["heures", "Heures", "number"], ["objet", "Objet", "select", ["Cours", "Remplacement", "Cours de soutien", "Surveillance d'examen", "Conseil de classe"]]],
     ligne: (x) => [`${x.heures} h · ${x.objet}`, `${dateFr(x.date)} · ${x.classe || ""} · ${x.parNom || ""}`] },
+  reservations: { titre: "Réservations (salles, matériel)", ico: "🔑", roles: OUI_ROLES("directeur", "prof", "surveillant", "personnel"),
+    champs: [["quoi", "Salle ou matériel", "select", ["Salle informatique", "Laboratoire", "Salle polyvalente", "Vidéoprojecteur", "Terrain de sport", "Bus de l'école"]], ["date", "Date", "date"], ["debut", "De", "time"], ["fin", "À", "time"], ["objet", "Pour quoi", "text"]],
+    ligne: (x) => [`${x.quoi} · ${jourFr(x.date)} ${x.debut || ""}–${x.fin || ""}`, `${x.parNom || ""}${x.objet ? " · " + x.objet : ""}`], tri: (a, b) => (a.date + a.debut).localeCompare(b.date + b.debut) },
   pointage: { titre: "Pointage du personnel", ico: "🕗", roles: OUI_ROLES("directeur"), lecture: true, champs: [],
     ligne: (x) => [`${x.nom}`, `${jourFr(x.date)} · arrivé à ${x.arrivee || "—"}${x.depart ? ` · parti à ${x.depart}` : ""}`] },
 };
@@ -72,7 +75,8 @@ async function vueRegistres(ctx) {
   const pt = S.role !== "directeur" ? await Ecole.lire("registres", `pt-${today()}-${Ecole.myId()}`).catch(() => null) : null;
   return `${S.role !== "directeur" ? `<div class="card"><h2>🕗 Mon pointage du jour</h2>${pt ? `<p class="small">Arrivé à <b>${esc(pt.arrivee)}</b>${pt.depart ? `, parti à <b>${esc(pt.depart)}</b>` : ""}.</p>` : `<p class="small muted">Pas encore pointé aujourd'hui.</p>`}
       ${!pt ? `<button class="btn" id="pt-in">Je suis arrivé</button>` : !pt.depart ? `<button class="btn alt" id="pt-out">Je pars</button>` : ""}</div>` : ""}
-    ${S.role === "directeur" ? `<div class="btns"><a class="btn alt small" href="#ecole/journal">🕵️ Historique des modifications</a><a class="btn alt small" href="#ecole/rapport">🗂️ Rapport du mois</a><a class="btn alt small" href="#ecole/cloture">🔒 Clôture de caisse</a></div>` : ""}
+    ${S.role === "directeur" ? `<div class="btns"><a class="btn alt small" href="#ecole/journal">🕵️ Historique des modifications</a><a class="btn alt small" href="#ecole/rapport">🗂️ Rapport du mois</a><a class="btn alt small" href="#ecole/cloture">🔒 Clôture de caisse</a><a class="btn alt small" href="#ecole/defi">🏁 Défi entre classes</a></div>` : ""}
+    ${S.role !== "personnel" ? `<a class="btn alt small" href="#ecole/clubs">🎭 Clubs et activités</a>` : ""}
     <div class="grid rub">${registresDuRole().map(([k, d]) => `<a class="subj tile" href="#ecole/registre/${k}"><span class="ico">${d.ico}</span><b>${d.titre}</b></a>`).join("")}</div>`;
 }
 

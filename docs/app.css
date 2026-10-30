@@ -180,3 +180,9 @@ button.subj.tile{font:inherit;color:inherit;text-align:left;cursor:pointer}
 .bulle{background:var(--surface-2);border-radius:12px 12px 12px 4px;padding:8px 10px;max-width:85%;align-self:flex-start}
 .bulle p{margin:4px 0 0;white-space:pre-wrap}
 .bulle.moi{background:var(--accent-soft);border-radius:12px 12px 4px 12px;align-self:flex-end}
+.classe-edit .cpp{grid-column:1/3}
+/* badges, copies rendues, interrogation imprimable */
+.badge-t{text-align:center}.badge-t.off{opacity:.38;filter:grayscale(1)}
+.copie{width:100%;max-height:420px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:var(--surface-2)}
+.interro-q{padding:6px 0;border-bottom:1px dashed var(--line)}
+@media print{.saut{page-break-before:always}}

@@ -221,9 +221,10 @@ const Ecole = (() => {
     if (S.role !== "eleve" || !S.fiche || (!force && Date.now() - (S.statsSync || 0) < 18e5)) return;
     const st = Object.values(S.stats), rep = st.reduce((n, s) => n + s.ok + s.ko, 0), ok = st.reduce((n, s) => n + s.ok, 0);
     const semaine = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toISOString().slice(0, 10); });
-    const notes = S.sessions.slice(-10).map((x) => (20 * x.score) / x.total);
+    const notes = S.sessions.slice(-10).map((x) => (20 * x.score) / x.total), mat = {};
+    for (const [qid, s] of Object.entries(S.stats)) { const sid = (qid.match(/^(.*)-\d+$/) || [])[1]; if (!sid) continue; const m = (mat[sid] = mat[sid] || [0, 0]); m[0] += s.ok + s.ko; m[1] += s.ok; }
     const stats = { rep, ok, derniere: S.days.slice(-1)[0] || null, jours7: semaine.filter((d) => S.days.includes(d)).length,
-      moy: notes.length ? Math.round((10 * notes.reduce((a, b) => a + b, 0)) / notes.length) / 10 : null };
+      moy: notes.length ? Math.round((10 * notes.reduce((a, b) => a + b, 0)) / notes.length) / 10 : null, mat };
     S.statsSync = Date.now(); store.save();
     saveFiche({ ...S.fiche, stats }).catch(() => {});
   }
@@ -248,7 +249,8 @@ const Ecole = (() => {
           naissance: `${2026 - age}-${String(1 + Math.floor(rnd() * 12)).padStart(2, "0")}-${String(1 + Math.floor(rnd() * 28)).padStart(2, "0")}`,
           tel: "77 000 " + String(k).padStart(4, "0").replace(/(\d\d)(\d\d)/, "$1 $2"), whatsapp: "", parent: `${pick(["M.", "Mme"])} ${nom}`, telParent: "78 000 " + String(k).padStart(4, "0").replace(/(\d\d)(\d\d)/, "$1 $2"),
           inscritLe: `2026-${rnd() < 0.7 ? "09" : "10"}-${String(1 + Math.floor(rnd() * 28)).padStart(2, "0")}`,
-          stats: { rep, ok: Math.round(rep * (0.42 + rnd() * 0.48)), derniere: rep ? d.toISOString().slice(0, 10) : null, jours7: rep ? Math.max(0, 6 - Math.floor(jours / 2) - Math.floor(rnd() * 3)) : 0, moy: rep ? Math.round((7 + rnd() * 11) * 10) / 10 : null } };
+          stats: { rep, ok: Math.round(rep * (0.42 + rnd() * 0.48)), derniere: rep ? d.toISOString().slice(0, 10) : null, jours7: rep ? Math.max(0, 6 - Math.floor(jours / 2) - Math.floor(rnd() * 3)) : 0, moy: rep ? Math.round((7 + rnd() * 11) * 10) / 10 : null,
+            mat: rep ? Object.fromEntries(subjectsOf(c.level || "6e").filter((m) => !/annales/.test(m.id)).map((m, j) => { const n = 5 + Math.floor(rnd() * 40); return [m.id, [n, Math.round(n * (0.3 + rnd() * 0.6 - (j % 3) * 0.08))]]; })) : {} } };
         pay[id] = Object.fromEntries(moisEchus(cfg).filter((m) => rnd() < (m === "inscription" ? 0.95 : 0.83)).map((m) => [m, { le: "2026-10-0" + (1 + Math.floor(rnd() * 8)) }]));
       }
     }
@@ -359,6 +361,15 @@ const Ecole = (() => {
     [["Paiement enregistré : " + moisNom(ceMois()) + `, élève ${el(3).prenom} ${el(3).nom}`, "M. Lamine Kane", at(0, "09:14")], ["Notes saisies : Mathématiques " + c0.nom + " Devoir 1", "Mme Aminata Diallo", at(-1, "19:02")],
       ["Paiement annulé : " + moisNom(ceMois()) + `, élève ${el(9).prenom} ${el(9).nom}`, "M. Lamine Kane", at(-2, "11:30")], ["Réglages de l'école modifiés", "Direction", at(-4, "08:00")]]
       .forEach(([quoi, qui, at2], i) => mettre("journal", "demo-j" + i, { quoi, qui, at: at2, par: "demo" }));
+    // élèves : clubs, absences et retards, copies rendues, défi entre classes
+    [["Club de lecture", "Mercredi 15 h, bibliothèque", "Mme Khady Fall", "On lit, on discute, on écrit."], ["Football", "Samedi 9 h, terrain", "M. Ousmane Sarr", "Entraînement et tournoi inter-classes."],
+      ["Théâtre", "Vendredi 16 h, salle polyvalente", "Mme Aminata Diallo", "Préparation du spectacle de fin d'année."], ["Club scientifique", "Jeudi 16 h, laboratoire", "M. Ousmane Sarr", "Expériences et olympiades."]]
+      .forEach(([nom, jour, responsable, description], i) => mettre("clubs", "demo-club" + i, { nom, jour, responsable, description, le: t(-20) }));
+    ids.slice(0, 70).forEach((id, i) => { if (i % 3 === 0) mettre("membres", `demo-club${i % 4}_${id}`, { club: "demo-club" + (i % 4), par: id, nom: `${eleves[id].prenom} ${eleves[id].nom}`, classe: eleves[id].classe, le: t(-10) }); });
+    ids.forEach((id, i) => { const abs = {}, ret = {}; for (let j = 1; j < 30; j++) { const r = rnd(); if (r < 0.025) abs[t(-j)] = eleves[id].classe; else if (r < 0.05) ret[t(-j)] = eleves[id].classe; } if (Object.keys(abs).length + Object.keys(ret).length) mettre("assiduite", id, { abs, ret }); });
+    const dv0 = (L.devoirs || []).filter((d) => d.demo).sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (dv0) parCl(dv0.cid).slice(0, 6).forEach((id, i) => mettre("rendus", `${dv0.id}_${id}`, { devoir: dv0.id, cid: dv0.cid, par: id, nom: `${eleves[id].prenom} ${eleves[id].nom}`, le: t(-1), corrige: i < 2, note: i < 2 ? ["15/20", "11/20"][i] : "", commentaire: i < 2 ? ["Bon travail, soigne la présentation.", "Revois la règle des fractions."][i] : "",
+      photo: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400"><rect width="300" height="400" fill="#fffef8"/>${[...Array(12)].map((_, k) => `<line x1="20" x2="${200 + ((k * 37) % 80)}" y1="${50 + k * 28}" y2="${50 + k * 28}" stroke="#2a3a8a" stroke-width="2"/>`).join("")}<text x="20" y="30" font-size="16">${eleves[id].prenom} ${eleves[id].nom}</text></svg>`)}` }));
     Object.keys(col.annonces || {}).forEach((a, j) => ids.slice(0, 20 + j * 9).forEach((id, i) => mettre("lectures", `${a}_${id}`, { annonce: a, par: id, le: t(-1), present: i % 3 === 0 })));
     L.col = col;
     L.paiements = pay; L.demo = true; keep();
@@ -515,7 +526,7 @@ const ONGLETS = {
 };
 const TITRES = { directeur: "Direction", prof: "Espace professeur", surveillant: "Vie scolaire", personnel: "Administration", parent: "Espace parent" };
 // pages ouvertes depuis une autre (fiche d'un élève, reçu, certificat), selon le profil
-const SOUS_PAGES = { directeur: ["eleve", "recu", "certificat", "notes", "bulletin", "registre", "convocation", "journal", "rapport", "cloture", "parents"], prof: ["eleve", "eleves", "bulletins", "bulletin", "registre", "parents"], surveillant: ["eleve", "registre", "convocation"], personnel: ["eleve", "recu", "certificat", "paiements", "registre", "cloture"], parent: ["recu", "bulletin"] };
+const SOUS_PAGES = { directeur: ["eleve", "recu", "certificat", "notes", "bulletin", "registre", "convocation", "journal", "rapport", "cloture", "parents", "defi", "analyse", "clubs", "rendus"], prof: ["eleve", "eleves", "bulletins", "bulletin", "registre", "parents", "defi", "analyse", "clubs", "rendus"], surveillant: ["eleve", "registre", "convocation", "clubs", "defi"], personnel: ["eleve", "recu", "certificat", "paiements", "registre", "cloture"], parent: ["recu", "bulletin"] };
 const ongletsEcole = (actif) => `<div class="row onglets noprint">${(ONGLETS[S.role] || []).map(([k, l]) => `<a class="btn alt small${k === actif ? " on" : ""}" href="#ecole${k ? "/" + k : ""}">${l}</a>`).join("")}</div>`;
 async function viewEcole() {
   const [, sub = "", arg = "", arg2 = ""] = location.hash.slice(1).split("/").map(decodeURIComponent);
@@ -530,15 +541,16 @@ async function viewEcole() {
       equipe && role !== "personnel" ? Ecole.lire("portail", today()).catch(() => null) : null, equipe ? Ecole.liste("annuaire").catch(vide) : []]);
     const ctx = { cfg, eleves: rattacher(cfg, eleves).sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom)), devoirs: rattacher(cfg, devoirs), pay,
       annonces: annonces.sort((a, b) => String(b.le).localeCompare(String(a.le))), appels, portail: (portail && portail.retards) || {}, annuaire };
-    const actif = { eleve: "eleves", recu: role === "parent" ? "" : "paiements", certificat: "eleves", registre: "registres", convocation: "", bulletin: { parent: "", prof: "notes" }[role] ?? "bulletins", bulletins: role === "prof" ? "notes" : "bulletins", notes: role === "prof" ? "notes" : "bulletins", journal: "registres", rapport: "", cloture: "", parents: "" }[sub] ?? sub;
+    const actif = { eleve: "eleves", recu: role === "parent" ? "" : "paiements", certificat: "eleves", registre: "registres", convocation: "", bulletin: { parent: "", prof: "notes" }[role] ?? "bulletins", bulletins: role === "prof" ? "notes" : "bulletins", notes: role === "prof" ? "notes" : "bulletins", journal: "registres", rapport: "", cloture: "", parents: "", defi: "", analyse: "", clubs: "registres", rendus: "devoirs" }[sub] ?? sub;
     const head = `<div class="row noprint"><h1>${titre}</h1><span class="small muted">${role === "parent" ? "" : esc(S.staffNom || "")}</span></div>
       ${Ecole.isDemo ? `<p class="demo small noprint">Démonstration : élèves et équipe fictifs. ${role === "directeur" ? `<button class="linkbtn" id="demo-off">Effacer la démo</button>` : ""}</p>` : ""}${ongletsEcole(actif)}`;
     const views = {
       "": { directeur: vueEnsemble, prof: vueProfAccueil, surveillant: vueAujourdhuiComplet, personnel: vueCaisse, parent: vueParent }[role],
-      eleves: vueEleves, eleve: vueFicheComplete, paiements: vuePaiementsComplet, registres: vueRegistres, registre: vueRegistre, demandes: vueDemandes, convocation: vueConvocation, devoirs: vueDevoirs, reglages: vueReglages,
+      eleves: vueEleves, eleve: vueFicheComplete, paiements: vuePaiementsComplet, registres: vueRegistres, registre: vueRegistre, demandes: vueDemandes, convocation: vueConvocation, devoirs: (ctx) => `<a class="btn alt small" href="#ecole/rendus">📥 Copies rendues en photo</a>${vueDevoirs(ctx)}`, reglages: vueReglages,
       annonces: vueAnnonces, equipe: vueEquipeComplete, edt: vueEdt, programme: vueProgramme, appel: vueAppel, quiz: vueQuiz, portail: vuePortail, recu: vueRecu, certificat: vueCertificat,
       notes: vueNotes, bulletins: vueBulletins, bulletin: vueBulletin,
       messages: vueMessages, documents: vueDocuments, journal: vueJournal, rapport: vueRapport, cloture: vueCloture, parents: vueParentsClasse,
+      defi: vueDefi, analyse: vueAnalyse, clubs: vueClubs, rendus: vueRendus,
     };
     $view.innerHTML = head + (await views[sub](ctx, arg, arg2));
     const off = document.getElementById("demo-off");
@@ -678,6 +690,7 @@ function vueReglages(ctx) {
       ${cfg.classes.map((c, i) => { const n = ctx.eleves.filter((f) => f.cid === c.id).length;
         return `<div class="classe-edit" data-i="${i}"><input class="field cn" value="${esc(c.nom)}" maxlength="24" aria-label="Nom de la classe">
           <select class="field clv" aria-label="Programme suivi">${DATA.levels.map((l) => `<option${l === c.level ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>
+          <input class="field cpp" value="${esc(c.pp || "")}" maxlength="40" placeholder="Professeur principal" aria-label="Professeur principal de ${esc(c.nom)}">
           <button class="btn alt small delc" data-i="${i}" aria-label="Supprimer ${esc(c.nom)}">✕</button>${n ? `<span class="small muted span">${n} élève${n > 1 ? "s" : ""}</span>` : ""}</div>`; }).join("")}</div>
     <div class="card"><h2>Ajouter des classes</h2>
       <label class="small">Programme suivi<select class="field" id="clvl">${DATA.levels.map((l) => `<option>${esc(l)}</option>`).join("")}</select></label>
@@ -692,10 +705,11 @@ function vueClassesProf(ctx) {
   const { cfg, eleves } = ctx, mine = S.profClasses || [];
   return `<div class="card"><h2>Mes classes</h2><p class="small muted">Coche les classes où tu enseignes.</p>
       <div class="chips">${cfg.classes.map((c) => `<label class="chip"><input type="checkbox" class="pc" value="${esc(c.id)}"${mine.includes(c.id) ? " checked" : ""}> ${esc(c.nom)}</label>`).join("")}</div></div>
-    ${cfg.classes.filter((c) => mine.includes(c.id)).map(({ id, nom: c }) => { const l = eleves.filter((f) => f.cid === id), a = l.filter((f) => reussite(f) !== null);
-      return `<div class="card"><div class="row"><h2>${esc(c)}</h2><span class="small muted">${l.length} élève${l.length > 1 ? "s" : ""}${a.length ? ` · ${Math.round(a.reduce((n, f) => n + reussite(f), 0) / a.length)} % réussite` : ""}</span></div>
+    <a class="btn alt small" href="#ecole/defi">🏁 Défi entre classes</a>
+    ${cfg.classes.filter((c) => mine.includes(c.id)).map(({ id, nom: c, pp }) => { const l = eleves.filter((f) => f.cid === id), a = l.filter((f) => reussite(f) !== null);
+      return `<div class="card"><div class="row"><h2>${esc(c)}${pp === S.staffNom ? " ⭐" : ""}</h2>${pp ? `<span class="small muted span">Prof. principal : ${esc(pp)}</span>` : ""}<span class="small muted">${l.length} élève${l.length > 1 ? "s" : ""}${a.length ? ` · ${Math.round(a.reduce((n, f) => n + reussite(f), 0) / a.length)} % réussite` : ""}</span></div>
         ${l.map((f) => ligneEleve(ctx, f)).join("") || `<p class="small muted">Aucun élève inscrit pour l'instant.</p>`}
-        ${l.length ? `<a class="btn alt small" href="#ecole/parents/${encodeURIComponent(id)}">✉️ Écrire aux parents de la classe</a> <a class="btn alt small" href="#ecole/messages/${encodeURIComponent(id)}">💬 Discussion de la classe</a>` : ""}</div>`; }).join("")}
+        ${l.length ? `<a class="btn alt small" href="#ecole/parents/${encodeURIComponent(id)}">✉️ Écrire aux parents de la classe</a> <a class="btn alt small" href="#ecole/messages/${encodeURIComponent(id)}">💬 Discussion de la classe</a> <a class="btn alt small" href="#ecole/analyse/${encodeURIComponent(id)}">📊 Analyse par matière</a>` : ""}</div>`; }).join("")}
     ${!ctx.eleves.length ? `<button class="btn alt" id="demo-on">Voir une démonstration avec des élèves fictifs</button>` : ""}
     <button class="btn alt" id="quit">Changer de profil sur ce téléphone</button>`;
 }
@@ -750,7 +764,7 @@ const bindEcole = {
     // les changements en cours (noms, programmes, montants) sont gardés aussi quand on ajoute des classes
     const v = (id) => document.getElementById(id).value;
     const lire = () => {
-      $view.querySelectorAll(".classe-edit").forEach((d) => { const c = cfg.classes[+d.dataset.i]; if (c) cfg.classes[+d.dataset.i] = { ...c, nom: d.querySelector(".cn").value.trim() || c.nom, level: d.querySelector(".clv").value }; });
+      $view.querySelectorAll(".classe-edit").forEach((d) => { const c = cfg.classes[+d.dataset.i]; if (c) cfg.classes[+d.dataset.i] = { ...c, nom: d.querySelector(".cn").value.trim() || c.nom, level: d.querySelector(".clv").value, pp: d.querySelector(".cpp").value.trim() }; });
       $view.querySelectorAll(".mens").forEach((i) => { cfg.mensualites[i.dataset.n] = +i.value || 0; });
       cfg.coefs = { ...(cfg.coefs || {}) }; $view.querySelectorAll(".coef").forEach((i) => { cfg.coefs[i.dataset.n] = +i.value || 1; });
       return { ...cfg, classes: cfg.classes.filter(Boolean), annee: v("annee").trim() || cfg.annee, debut: v("debut") || cfg.debut, fin: v("fin") || cfg.fin, inscription: +v("insc") || 0, wave: v("wave").trim() };
