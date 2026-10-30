@@ -139,3 +139,28 @@ label.small{display:flex;flex-direction:column;gap:4px}
 label.row.small{flex-direction:row}
 .classe-edit{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
 .classe-edit .field{padding:8px;margin:0}.classe-edit .span{grid-column:1/-1}.classe-edit .btn{width:auto;padding:6px 10px}
+/* Vie scolaire : tableau du jour, appel, portail, documents imprimables, carte d'élève, quiz au tableau */
+.mini4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+.mini4>div{display:flex;flex-direction:column;gap:2px}.mini4 .count{font-size:1.5rem}
+.lib.eleve .btn.small{width:auto;flex:none;margin:0;padding:6px 10px}
+button.lib.eleve{width:100%;font:inherit;color:inherit;background:none;border:0;border-bottom:1px solid var(--line);text-align:left;cursor:pointer}
+.appel-l{display:flex;align-items:center;gap:10px;width:100%;padding:8px 4px;border:0;border-bottom:1px solid var(--line);background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.appel-l .etat{flex:none;font-size:.8rem;font-weight:700;border-radius:99px;padding:4px 10px}
+.appel-l[data-e="P"] .etat::after{content:"Présent"}.appel-l[data-e="P"] .etat{background:var(--ok-soft);color:var(--ok)}
+.appel-l[data-e="A"] .etat::after{content:"Absent"}.appel-l[data-e="A"] .etat{background:var(--ko-soft);color:var(--ko)}
+.appel-l[data-e="R"] .etat::after{content:"Retard"}.appel-l[data-e="R"] .etat{background:var(--hi);color:var(--hi-ink)}
+.appel-l[data-e="A"]{background:var(--ko-soft)}
+#cam{width:100%;border-radius:12px;background:#000;max-height:50vh;object-fit:cover}
+.annonce{gap:6px}.annonce p{margin:0}.cal{padding:6px 0;border-bottom:1px solid var(--line)}
+textarea.field{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;box-sizing:border-box;resize:vertical}
+.doc{gap:10px;line-height:1.5}.doc .row{border-bottom:1px dashed var(--line);padding:4px 0}
+.doc-tete{display:flex;align-items:center;gap:12px;border-bottom:2px solid var(--accent);padding-bottom:10px}.doc-tete img{width:56px;height:56px}
+.doc-titre{text-align:center;text-transform:uppercase;letter-spacing:.05em;margin:8px 0}
+.carte{background:var(--surface);border:2px solid var(--accent);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px;margin-bottom:14px}
+.carte-corps{display:flex;align-items:center;gap:14px}
+.qr{width:180px;margin:0 auto;background:#fff;padding:6px;border-radius:8px}.qr svg{display:block;width:100%;height:auto}
+.presente .q{font-size:1.3rem;font-weight:700}.presente .choice{cursor:default}
+@media print{
+  header.top,nav.tabs,.noprint,.demo{display:none!important}
+  body{background:#fff;color:#000}.card.doc{box-shadow:none;border:0}
+}

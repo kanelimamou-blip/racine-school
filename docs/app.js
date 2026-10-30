@@ -150,6 +150,7 @@ function viewHome() {
       <div style="text-align:right"><p class="small muted">Série en cours</p><p class="count">${streak()} 🔥</p></div></div>
     </div>
     ${ficheCard()}
+    <div id="ecole-accueil"></div>
     ${agendaCard()}
     ${tutoCard()}
     ${programme()}
@@ -170,6 +171,7 @@ function viewHome() {
   $view.querySelector("#share").onclick = share;
   const tx = $view.querySelector("#tuto-x");
   if (tx) tx.onclick = () => { S.tutoVu = true; store.save(); tx.closest(".tuto").remove(); };
+  remplirAccueilEleve();
 }
 
 const srcLine = (q) => (q.src ? `<p class="src">📄 Source : ${esc(q.src)}</p>` : "");
@@ -724,7 +726,7 @@ function render() {
   const [tab, arg] = (location.hash.slice(1) || (isStaff() ? "ecole" : "accueil")).split("/");
   document.getElementById("exam-tag").textContent = S.level || "";
   // onglets selon le profil : l'équipe de l'école a son espace à la place des erreurs et du premium
-  document.querySelectorAll(".tabs a").forEach((a) => { a.hidden = isStaff() ? ["erreurs", "premium"].includes(a.dataset.tab) : a.dataset.tab === "ecole"; });
+  document.querySelectorAll(".tabs a").forEach((a) => { a.hidden = S.role === "parent" ? a.dataset.tab !== "ecole" : isStaff() ? ["erreurs", "premium"].includes(a.dataset.tab) : a.dataset.tab === "ecole"; });
   // profil et fiche d'inscription d'abord, puis l'espace école (qui ne dépend pas d'une classe)
   document.querySelector(".tabs").hidden = !S.role;
   if (!S.role) return viewRole();
@@ -733,7 +735,7 @@ function render() {
   if (tab === "ecole" && isStaff()) { document.querySelectorAll(".tabs a").forEach((a) => { if (a.dataset.tab === "ecole") a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); }); return viewEcole(); }
   if ((!S.level || !DATA.levels.includes(S.level)) && tab !== "classe") { S.level = null; return viewLevel(); }
   document.querySelectorAll(".tabs a").forEach((a) => { if (a.dataset.tab === tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
-  ({ classe: viewLevel, annales: viewAnnales, exercices: viewExercices, "qcm-list": viewQcmList, devoir: () => viewDevoir(arg), duo: () => viewDuo(arg), challenge: viewChallenge, fiches: viewFiches, fiche: () => viewFiche(arg), assistant: viewAssistant, agenda: () => viewAgenda(arg), notions: viewNotions, notion: () => viewNotion(arg), sujet: () => viewGuided(arg), quiz: () => viewQuiz(arg), examen: viewExam, erreurs: viewErrors, progres: viewProgress, premium: () => viewPremium() }[tab] || viewHome)();
+  ({ classe: viewLevel, annales: viewAnnales, exercices: viewExercices, "qcm-list": viewQcmList, devoir: () => viewDevoir(arg), duo: () => viewDuo(arg), challenge: viewChallenge, fiches: viewFiches, fiche: () => viewFiche(arg), assistant: viewAssistant, agenda: () => viewAgenda(arg), notions: viewNotions, notion: () => viewNotion(arg), sujet: () => viewGuided(arg), quiz: () => viewQuiz(arg), examen: viewExam, erreurs: viewErrors, progres: viewProgress, premium: () => viewPremium(), carte: viewCarte }[tab] || viewHome)();
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", render);

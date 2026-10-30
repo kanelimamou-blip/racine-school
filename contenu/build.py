@@ -38,7 +38,7 @@ from questions import CLASSES, FAMILIES, FREE, LEVELS, SERIES, SUBJECTS
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT.parent / "docs" / "data"
 HASHES = ROOT / "code_hashes.txt"
-CLES = ROOT / "cles_ecole.json"  # hachages des clés d'entrée professeur et directeur
+CLES = ROOT / "cles_ecole.json"  # hachages des clés d'entrée de l'équipe
 SALT = "racine-school:"
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # sans 0/O ni 1/I
 
@@ -97,7 +97,7 @@ service cloud.firestore {
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid && validCode(code);
     }
 
-    // ---------- Espace école : professeurs et direction
+    // ---------- Espace école : direction, professeurs, surveillants, personnel, parents
     function signedIn() { return request.auth != null; }
     function staffRole() {
       let p = /databases/$(db)/documents/staff/$(request.auth.uid);
@@ -105,35 +105,79 @@ service cloud.firestore {
     }
     function isDir() { return staffRole() == 'directeur'; }
     function isStaff() { return staffRole() == 'directeur' || staffRole() == 'prof'; }
+    function isEquipe() { return staffRole() in ['directeur', 'prof', 'surveillant', 'personnel']; }
+    function isCaisse() { return staffRole() in ['directeur', 'personnel']; }
+    function isParentDe(eleve) { return signedIn() && exists(/databases/$(db)/documents/liens/$(request.auth.uid + '_' + eleve)); }
     // clé d'entrée = préfixe + « - » + 6 caractères tirés du secret et du rôle
     function validKey(role, cle) {
       let p = cle.split('-');
       return p.size() == 2 && p[1].lower() == hashing.sha256('SECRET:' + role).toHexString().lower()[0:6];
     }
-    // un professeur ou le directeur s'inscrit avec sa clé d'entrée ; le directeur voit toute l'équipe
+    // un membre de l'équipe s'inscrit avec la clé d'entrée de son rôle ; le directeur voit toute l'équipe
     match /staff/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isDir());
       allow create, update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.role in ['directeur', 'prof']
+        && request.resource.data.role in ['directeur', 'prof', 'surveillant', 'personnel']
         && validKey(request.resource.data.role, request.resource.data.cle);
       allow delete: if isDir();
     }
-    // fiche d'inscription : l'élève écrit la sienne, l'équipe de l'école la lit
+    // annuaire de l'équipe (nom, rôle, téléphone), sans les clés
+    match /annuaire/{uid} {
+      allow read: if isEquipe();
+      allow create, update: if signedIn() && request.auth.uid == uid && isEquipe();
+      allow delete: if isDir() || (signedIn() && request.auth.uid == uid);
+    }
+    // fiche d'inscription : l'élève écrit la sienne, l'équipe de l'école et ses parents la lisent
     match /eleves/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+      allow read: if signedIn() && (request.auth.uid == uid || isEquipe() || isParentDe(uid));
       allow create, update: if signedIn() && request.auth.uid == uid && request.resource.data.keys().size() < 30;
       allow delete: if isDir();
     }
-    // paiements de scolarité : tenus par la direction, l'élève voit les siens
+    // code remis par l'élève à ses parents : lu seulement par son code exact
+    match /codesParent/{code} {
+      allow get: if signedIn();
+      allow list, update, delete: if false;
+      allow create: if signedIn() && request.resource.data.eleve == request.auth.uid && code.size() == 8;
+    }
+    // lien parent -> enfant, créé par le parent avec le code de l'enfant
+    match /liens/{id} {
+      allow read: if signedIn() && resource.data.parent == request.auth.uid;
+      allow create: if signedIn() && id == request.auth.uid + '_' + request.resource.data.enfant
+        && request.resource.data.parent == request.auth.uid
+        && get(/databases/$(db)/documents/codesParent/$(request.resource.data.code)).data.eleve == request.resource.data.enfant;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.parent == request.auth.uid;
+    }
+    // paiements de scolarité : tenus par la direction et la caisse, l'élève et ses parents voient les siens
     match /paiements/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isDir());
-      allow write: if isDir();
+      allow read: if signedIn() && (request.auth.uid == uid || isCaisse() || isParentDe(uid));
+      allow write: if isCaisse();
     }
     // devoirs publiés par les professeurs pour une classe
     match /devoirs/{id} {
       allow read: if signedIn();
       allow create: if isStaff() && request.resource.data.par == request.auth.uid;
       allow update, delete: if isDir() || (isStaff() && resource.data.par == request.auth.uid);
+    }
+    // ce qui a été vu en classe, pour réviser le soir
+    match /seances/{id} {
+      allow read: if signedIn();
+      allow create: if isStaff() && request.resource.data.par == request.auth.uid;
+      allow update, delete: if isDir() || (isStaff() && resource.data.par == request.auth.uid);
+    }
+    // appel en classe et retards au portail : vus par l'équipe
+    match /appels/{id} {
+      allow read: if isEquipe();
+      allow create, update: if isEquipe() && request.resource.data.par == request.auth.uid;
+      allow delete: if isDir();
+    }
+    match /portail/{jour} {
+      allow read, write: if isEquipe();
+    }
+    // annonces et calendrier de l'école : publiés par la direction, lus par tous
+    match /annonces/{id} {
+      allow read: if signedIn();
+      allow write: if isDir();
     }
     // classes, mensualités, année scolaire : réglés par la direction
     match /ecole/{doc} {
@@ -182,11 +226,11 @@ def rules_texte(sec):
     return "\n".join(lignes) + "\n"
 
 
-ROLES = {"directeur": "DIR", "prof": "PROF"}
+ROLES = {"directeur": "DIR", "prof": "PROF", "surveillant": "SURV", "personnel": "PERS"}
 
 
 def new_keys():
-    """Clés d'entrée de l'espace école : une pour la direction, une pour les professeurs (tirées du secret)."""
+    """Clés d'entrée de l'espace école : une par rôle (direction, professeurs, surveillants, personnel), tirées du secret."""
     sec = secret()
     keys = {r: f"{pre}-{hashlib.sha256((sec + ':' + r).encode()).hexdigest()[:6].upper()}" for r, pre in ROLES.items()}
     CLES.write_text(json.dumps({r: code_hash(k) for r, k in keys.items()}, indent=1) + "\n")
@@ -276,7 +320,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--codes", type=int, default=0)
     p.add_argument("--dest", default="/mnt/project-files/racine-school/prive/codes-premium.txt")
-    p.add_argument("--cles", action="store_true", help="écrit les clés d'entrée professeur et directeur")
+    p.add_argument("--cles", action="store_true", help="écrit les clés d'entrée de l'équipe (direction, professeurs, surveillants, personnel)")
     args = p.parse_args()
     if args.cles:
         new_keys()
