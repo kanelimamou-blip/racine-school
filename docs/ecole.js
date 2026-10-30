@@ -216,7 +216,7 @@ const Ecole = (() => {
   }
   // Résumé des progrès de l'élève, lu par la direction et les professeurs (au plus toutes les 30 minutes)
   function syncStats(force = false) {
-    if (S.role !== "eleve" || !S.fiche || (!force && Date.now() - (S.statsSync || 0) < 18e5)) return;
+    if (S.role !== "eleve" || !S.fiche || S.fiche.apercu || (!force && Date.now() - (S.statsSync || 0) < 18e5)) return;
     const st = Object.values(S.stats), rep = st.reduce((n, s) => n + s.ok + s.ko, 0), ok = st.reduce((n, s) => n + s.ok, 0);
     const semaine = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toISOString().slice(0, 10); });
     const notes = S.sessions.slice(-10).map((x) => (20 * x.score) / x.total), mat = {};
@@ -402,7 +402,7 @@ async function viewEcole() {
       annonces: annonces.sort((a, b) => String(b.le).localeCompare(String(a.le))), appels, portail: (portail && portail.retards) || {}, annuaire };
     const actif = { eleve: "eleves", recu: role === "parent" ? "" : "paiements", certificat: "eleves", registre: "registres", convocation: "", bulletin: { parent: "", prof: "notes" }[role] ?? "bulletins", bulletins: role === "prof" ? "notes" : "bulletins", notes: role === "prof" ? "notes" : "bulletins", journal: "registres", rapport: "", cloture: "", parents: "", defi: "", analyse: "", clubs: "registres", rendus: "devoirs" }[sub] ?? sub;
     const head = `<div class="row noprint"><h1>${titre}</h1><span class="small muted">${role === "parent" ? "" : esc(S.staffNom || "")}</span></div>
-      ${ongletsEcole(actif)}`;
+      ${voirComme()}${ongletsEcole(actif)}`;
     const views = {
       "": { directeur: vueEnsemble, prof: vueProfAccueil, surveillant: vueAujourdhuiComplet, personnel: vueCaisse, parent: vueParent }[role],
       eleves: vueEleves, eleve: vueFicheComplete, paiements: vuePaiementsComplet, registres: vueRegistres, registre: vueRegistre, demandes: vueDemandes, convocation: vueConvocation, devoirs: (ctx) => `<a class="btn alt small" href="#ecole/rendus">📥 Copies rendues en photo</a>${vueDevoirs(ctx)}`, reglages: vueReglages,
@@ -412,7 +412,7 @@ async function viewEcole() {
       defi: vueDefi, analyse: vueAnalyse, clubs: vueClubs, rendus: vueRendus,
     };
     $view.innerHTML = head + (await views[sub](ctx, arg, arg2));
-    quitter();
+    quitter(); lierVoir();
     const b = sub === "" ? bindEcole["accueil-" + role] || bindEcole[""] : bindEcole[sub];
     b && b(ctx, arg, arg2);
     verifierNouveautes().catch(() => {});
@@ -567,6 +567,18 @@ function vueClassesProf(ctx) {
     <button class="btn alt" id="quit">Changer de profil sur ce téléphone</button>`;
 }
 
+// La direction peut ouvrir l'appli comme chaque profil, sans clé, pour tout voir
+const VOIR = [["directeur", "Direction"], ["prof", "Professeur"], ["surveillant", "Surveillant"], ["personnel", "Personnel"], ["parent", "Parent"], ["eleve", "Élève"]];
+const voirComme = () => (S.role === "directeur" || S.dirReel ? `<div class="row noprint voir"><span class="small">👁️ Voir l'appli comme</span><select class="field" id="voirc">${VOIR.map(([k, n]) => `<option value="${k}"${k === S.role ? " selected" : ""}>${n}</option>`).join("")}</select></div>` : "");
+async function changerVue(r) {
+  if (r === "directeur") { S.role = "directeur"; delete S.dirReel; if (S.fiche && S.fiche.apercu) delete S.fiche; store.save(); return go("ecole"); }
+  S.dirReel = true; S.role = r;
+  const cfg = await Ecole.config(), c = cfg.classes[0] || { id: "", nom: "", level: "6e" };
+  if (r === "prof" && !(S.profClasses || []).length) S.profClasses = cfg.classes.map((x) => x.id);
+  if (r === "eleve") { if (!S.fiche) S.fiche = { apercu: true, prenom: "Élève", nom: "Aperçu", classe: c.nom, classeId: c.id, level: c.level }; S.level = S.level || c.level; }
+  store.save(); go(r === "eleve" ? "accueil" : "ecole");
+}
+const lierVoir = () => { const v = document.getElementById("voirc"); if (v) v.onchange = () => changerVue(v.value); };
 const quitter = () => { const q = document.getElementById("quit"); if (q) q.onclick = () => { delete S.role; delete S.staffNom; store.save(); go("accueil"); }; };
 const bindEcole = {
   "": () => {

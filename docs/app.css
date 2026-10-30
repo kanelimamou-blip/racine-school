@@ -186,3 +186,4 @@ button.subj.tile{font:inherit;color:inherit;text-align:left;cursor:pointer}
 .copie{width:100%;max-height:420px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:var(--surface-2)}
 .interro-q{padding:6px 0;border-bottom:1px dashed var(--line)}
 @media print{.saut{page-break-before:always}}
+.voir{gap:8px;margin:4px 0 8px}.voir .field{margin:0;max-width:200px;padding:6px 8px}
