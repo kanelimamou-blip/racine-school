@@ -26,9 +26,10 @@
       return;
     }
     $view.innerHTML = `<p class="tag-src">${esc(S.level)} · programme officiel</p><h1>${esc(s.name)}</h1><div id="supports"></div>
-      <p class="muted">${progOf(sid).length} chapitres, dans l'ordre du programme. Chaque chapitre : cours, synthèse, ${(DATA.formules || {})[sid] ? "formules, " : ""}exercice corrigé et QCM.</p>
+      <p class="muted">${progOf(sid).length} chapitres, dans l'ordre du programme. Chaque chapitre : cours, synthèse, ${(DATA.formules || {})[sid] ? (/maths|pc|svt|eco|compta/.test(sid) ? "formules, " : "repères à retenir, ") : ""}exercice corrigé et QCM.</p>
       <div class="card">${progOf(sid).map((t, p) => `<a class="row lib" href="#chapitre/${sid}/${p}"><span>${p + 1}. ${esc(t)}</span><span class="small muted">${qcmOf(sid, p).length} QCM ›</span></a>`).join("")}</div>
-      <a class="btn" href="#quiz/${sid}">QCM sur toute la matière</a>
+      <a class="btn" href="#quiz/${sid}/themes">🎯 QCM par thème, pour préparer un devoir</a>
+      <a class="btn alt" href="#quiz/${sid}">QCM sur toute la matière</a>
       <a class="btn alt" href="#matiere">Autres matières</a>`;
     showSupports(sid);
   }
@@ -40,7 +41,7 @@
     $view.innerHTML = `<p class="tag-src">${esc(s.name)} · chapitre ${p + 1} / ${prog.length}</p><h1>${esc(prog[p])}</h1><div id="supports"></div>
       ${n ? `<a class="card lib-card" href="#notion/${n.id}"><b>📘 Le cours</b><span class="small muted">Cours expliqué, à retenir, ${n.exemples.length} exemple${n.exemples.length > 1 ? "s" : ""} résolu${n.exemples.length > 1 ? "s" : ""}${isPremium() || n.free ? "" : " 🔒"}</span></a>` : ""}
       ${syn.map(({ c, i }) => `<a class="card lib-card" href="#fiche/${sid}~${i}"><b>📝 La synthèse${syn.length > 1 ? " : " + esc(c.t) : ""}</b><span class="small muted">L'essentiel, la méthode, les pièges, un exemple corrigé, ce qui tombe à l'examen</span></a>`).join("")}
-      ${f ? `<details class="card"><summary><b>📐 Les formules du chapitre</b> <span class="small muted">(${f.f.length})</span></summary><ul class="steps">${f.f.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><a class="small" href="#outils/formules/${sid}">Tout le formulaire de ${esc(s.name)}</a></details>` : ""}
+      ${f ? `<details class="card"><summary><b>${/maths|pc|eco|compta/.test(sid) ? "📐 Les formules du chapitre" : /svt/.test(sid) ? "📐 Formules et repères du chapitre" : "📌 Les repères à retenir"}</b> <span class="small muted">(${f.f.length})</span></summary><ul class="steps">${f.f.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><a class="small" href="#outils/formules/${sid}">Tout le formulaire de ${esc(s.name)}</a></details>` : ""}
       ${n ? `<a class="card lib-card" href="#sujet/ch-${n.id}"><b>✏️ Exercice corrigé pas à pas</b><span class="small muted">Tu réponds étape par étape, le corrigé suit chaque réponse</span></a>` : ""}
       <a class="card lib-card" href="#outils/flash/${sid}/${p}"><b>🃏 Fiches flash</b><span class="small muted">Les cartes tirées de la synthèse de ce chapitre</span></a>
       <button class="btn hi-btn" id="qcm"${qs.length || (GEN[sid] || []).some(([c]) => c === prog[p]) ? "" : " disabled"}>✅ QCM du chapitre (${qs.length})</button>

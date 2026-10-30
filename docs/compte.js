@@ -59,7 +59,33 @@ const Compte = (() => {
       return { created: v.created ? v.created.toDate() : new Date(), premium: !!v.premium, suspendu: false, data: v.data || {}, name: voir.nom, email: voir.email };
     }
     envoyerErreurs();
-    return { created: doc.created ? doc.created.toDate() : new Date(), premium: !!doc.premium, suspendu: doc.suspendu === true, data: doc.data || {}, name: user.displayName || "", email: user.email || "" };
+    // un seul essai gratuit par téléphone : un nouveau compte sur un téléphone déjà utilisé reprend la date la plus ancienne
+    const created = doc.created ? doc.created.toDate() : new Date(), premier = doc.suspendu === true ? null : await telephone();
+    return { created: premier && premier < created ? premier : created, premium: !!doc.premium, suspendu: doc.suspendu === true, data: doc.data || {}, name: user.displayName || "", email: user.email || "" };
+  }
+
+  // Identifiant secret du téléphone : 20 caractères tirés au hasard au premier lancement, gardés en mémoire locale
+  // et dans le cache de l'appli (vider l'un ne suffit pas à repartir de zéro)
+  const ID_TEL = /^[a-z0-9]{20}$/;
+  async function idTelephone() {
+    let id = null;
+    try { id = localStorage.getItem("racine-tel"); } catch {}
+    const c = await caches.open("racine_prefs").catch(() => null);
+    if (!ID_TEL.test(id || "") && c) id = await c.match("tel").then((r) => (r ? r.text() : null)).catch(() => null);
+    if (!ID_TEL.test(id || "")) id = [...crypto.getRandomValues(new Uint8Array(20))].map((b) => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("");
+    try { localStorage.setItem("racine-tel", id); } catch {}
+    if (c) c.put("tel", new Response(id)).catch(() => {});
+    return id;
+  }
+  // devices/{id} : date de première utilisation et comptes ouverts sur ce téléphone ; renvoie la date de première utilisation
+  async function telephone() {
+    try {
+      const ref = db.collection("devices").doc(await idTelephone()), snap = await ref.get();
+      if (!snap.exists) { await ref.set({ first: firebase.firestore.FieldValue.serverTimestamp(), uids: [user.uid] }); return null; }
+      const d = snap.data();
+      if (!(d.uids || []).includes(user.uid) && (d.uids || []).length < 50) await ref.update({ uids: firebase.firestore.FieldValue.arrayUnion(user.uid) });
+      return d.first && d.first.toDate ? d.first.toDate() : null;
+    } catch { return null; }
   }
 
   async function signIn() {
@@ -178,6 +204,12 @@ const Compte = (() => {
   // Données de l'espace propriétaire (les règles refusent tout autre compte)
   const comptes = async () => (await db.collection("users").get()).docs.map((d) => ({ ...d.data(), uid: d.id }));
   const erreurs = async () => (await db.collection("erreurs").orderBy("at", "desc").limit(200).get()).docs.map((d) => ({ ...d.data(), id: d.id }));
+  // téléphones partagés : { uid: [autres comptes ouverts sur le même téléphone] }
+  async function telephonesPartages() {
+    const out = {};
+    (await db.collection("devices").get()).docs.forEach((d) => { const u = d.data().uids || []; if (u.length > 1) u.forEach((x) => { out[x] = [...new Set([...(out[x] || []), ...u.filter((y) => y !== x)])]; }); });
+    return out;
+  }
   const lister = async (col) => (await db.collection(col).get()).docs.map((d) => ({ ...d.data(), id: d.id }));
   // « Voir » : l'appli se recharge comme ce compte la voit (ou, sans compte, avec le rôle choisi pour une présentation)
   function voirCompte(v) { sessionStorage.setItem("racine-voir", JSON.stringify(v)); location.hash = ""; location.reload(); }
@@ -187,5 +219,5 @@ const Compte = (() => {
     for (let i = 0; i < ids.length; i += 400) { const b = db.batch(); ids.slice(i, i + 400).forEach((id) => b.delete(db.collection("erreurs").doc(id))); await b.commit(); }
   }
 
-  return { enabled, start, activite, erreur, comptes, erreurs, lister, suspendre, viderErreurs, get proprio() { return proprio; }, get suspendu() { return !!(doc && doc.suspendu === true); }, postScore, listenScores, signIn, signInEmail, resetPassword, signOut, claim, save, get user() { return voir && voir.uid && user ? { uid: voir.uid, email: voir.email, displayName: voir.nom, emailVerified: true } : user; }, get voir() { return voir; }, voirCompte, quitterVue, get ready() { return ready; } };
+  return { enabled, start, activite, erreur, comptes, erreurs, lister, telephonesPartages, suspendre, viderErreurs, get proprio() { return proprio; }, get suspendu() { return !!(doc && doc.suspendu === true); }, postScore, listenScores, signIn, signInEmail, resetPassword, signOut, claim, save, get user() { return voir && voir.uid && user ? { uid: voir.uid, email: voir.email, displayName: voir.nom, emailVerified: true } : user; }, get voir() { return voir; }, voirCompte, quitterVue, get ready() { return ready; } };
 })();

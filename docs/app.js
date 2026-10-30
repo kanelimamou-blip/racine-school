@@ -31,8 +31,10 @@ if (!S.trialStart) { S.trialStart = today(); store.save(); }
 const trialLeft = () => Math.max(0, TRIAL_DAYS - Math.floor((new Date(today()) - new Date(S.trialStart)) / 864e5));
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-// Racine School : l'école paie un forfait, tout est ouvert à tous les élèves (pas d'essai ni de code premium)
-const isPremium = () => true;
+// Élèves : essai gratuit (un seul par téléphone, voir compte.js) puis code premium, si CONFIG_APP.essai est activé.
+// L'équipe de l'école, les parents, la direction (même en « Voir l'appli comme ») et l'admin ont toujours tout.
+const essaiActif = () => CONFIG_APP.essai === true;
+const isPremium = () => !essaiActif() || S.premium || trialLeft() > 0 || (typeof isStaff === "function" && isStaff()) || !!S.dirReel || !!(S.fiche && S.fiche.apercu) || Compte.proprio;
 const open = (q) => isPremium() || q.free;
 const qsOf = (sid) => DATA.questions.filter((q) => q.s === sid);
 // Tirage sans répétition : d'abord les questions jamais vues, puis celles ratées, puis les plus anciennes ;
@@ -153,6 +155,7 @@ function viewHome() {
     </a>`).join("");
   $view.innerHTML = `
     ${isIOS && !standalone ? `<div class="card small"><b>Installer sur iPhone :</b> ouvre ce lien dans Safari, appuie sur Partager (carré avec une flèche) puis sur « Sur l'écran d'accueil ».</div>` : ""}
+    ${essaiActif() && !S.premium && S.role === "eleve" && trialLeft() > 0 ? `<a class="trial" href="#premium">🎁 Essai gratuit : tout est débloqué encore <b>${trialLeft()} jour${trialLeft() > 1 ? "s" : ""}</b></a>` : ""}
     ${!isPremium() ? `<a class="trial" href="#premium">🔒 Ton essai gratuit de ${TRIAL_DAYS} jours est terminé. Abonne-toi pour tout retrouver, avec tes progrès.</a>` : ""}
     <div class="card">
       <div class="row">${ex ? `<div><p class="small muted">${ex[0]} ${ex[1].slice(0, 4)}, date indicative</p><p class="count">J−${days}</p></div>`
@@ -178,10 +181,9 @@ function viewHome() {
     <div class="grid">${subs}</div>
     <div class="btns">
       <a class="btn hi-btn" href="#examen">${blancName()} : ${EXAM_LEN} questions en ${EXAM_MIN} min${isPremium() ? "" : " 🔒"}</a>
-      <button class="btn alt" id="share">Partager l'appli à un camarade</button>
+      <a class="btn alt" href="#partager">Partager l'appli à un camarade (lien ou QR code)</a>
     </div>`;
   bindQuestion($view.querySelector("#daily"), daily, () => {});
-  $view.querySelector("#share").onclick = share;
   const tx = $view.querySelector("#tuto-x");
   if (tx) tx.onclick = () => { S.tutoVu = true; store.save(); tx.closest(".tuto").remove(); };
   remplirAccueilEleve();
@@ -267,9 +269,23 @@ function chooseMode(title, sub, start) {
   document.getElementById("m-help").onclick = () => start(false);
   document.getElementById("m-solo").onclick = () => start(true);
 }
-function viewQuiz(sid) {
-  const s = DATA.subjects.find((x) => x.id === sid);
+function viewQuiz(arg = "") {
+  const [sid, theme] = arg.split("/"), s = DATA.subjects.find((x) => x.id === sid);
   if (!s) return go("accueil");
+  const titres = (DATA.programmes || {})[sid] || [];
+  // QCM par thème : un chapitre du programme, pour préparer un devoir
+  if (theme === "themes") {
+    const n = (i) => qsOf(sid).filter((q) => q.ch === i).length;
+    $view.innerHTML = `<h1>${esc(s.name)} : QCM par thème</h1><p class="muted">Choisis le chapitre de ton prochain devoir : les questions portent uniquement sur ce chapitre.</p>
+      ${titres.map((t, i) => n(i) ? `<a class="card lib-card" href="#quiz/${sid}/${i}"><b>${i + 1}. ${esc(t)}</b><span class="small muted">${n(i)} questions${(GEN[sid] || []).some(([c]) => c === t || c === i) ? " + ∞ à nombres nouveaux" : ""}${isPremium() ? "" : " 🔒"}</span></a>` : "").join("")}
+      <a class="btn alt" href="#quiz/${sid}">Toutes les questions de ${esc(s.name)}</a><a class="btn alt" href="#qcm-list">Retour aux matières</a>`;
+    return;
+  }
+  const ch = theme !== undefined && theme !== "" && titres[Number(theme)] ? Number(theme) : null;
+  if (ch !== null) {
+    const qs = mixQuestions(sid, qsOf(sid).filter((q) => q.ch === ch && open(q)), QUIZ_LEN, [ch, titres[ch]]);
+    return chooseMode(`QCM · ${titres[ch]}`, `${qs.length} questions sur ce chapitre`, (solo) => { markDone("qcm"); runQuiz(`${S.level} · ${titres[ch]}`, qs, `#quiz/${sid}/themes`, { solo }); });
+  }
   const qs = mixQuestions(sid, qsOf(sid).filter(open), QUIZ_LEN);
   chooseMode(`QCM · ${s.name}`, `${qs.length} questions de ${S.level}`, (solo) => { markDone("qcm"); runQuiz(`${S.level} · ${s.name}`, qs, "#qcm-list", { solo }); });
 }
@@ -432,6 +448,8 @@ function viewQcmList() {
   $view.innerHTML = `<h1>QCM corrigés</h1><p class="muted">Pour chaque question, tu vois si ton choix est juste, la bonne réponse et l'explication. Les erreurs sont gardées pour les revoir.</p>
     <div class="grid">${subjectsOf(S.level).map((s) => `<a class="subj" href="#quiz/${s.id}" style="text-decoration:none;color:inherit"><b>${esc(s.name)}</b>
       <span class="small muted">${isPremium() ? s.count : s.free} questions${isPremium() && (GEN[s.id] || []).length ? " + ∞" : ""}</span><span class="bar"><i style="width:${mastery(s.id)}%"></i></span></a>`).join("")}</div>
+    <h2>🎯 Par thème, pour préparer un devoir</h2><p class="small muted">Choisis la matière, puis le chapitre de ton devoir.</p>
+    <div class="row onglets">${subjectsOf(S.level).filter((s) => ((DATA.programmes || {})[s.id] || []).length).map((s) => `<a class="btn alt small" href="#quiz/${s.id}/themes">${esc(s.name)}</a>`).join("")}</div>
     <a class="btn alt" href="#erreurs">Revoir mes erreurs</a>`;
 }
 
@@ -656,9 +674,10 @@ function viewPremium(reason = "", pay = "wave") {
 
 // Partage : sur Android, la vidéo de présentation part avec le lien (WhatsApp l'affiche directement) ;
 // sinon, le lien seul, dont l'aperçu montre l'image de présentation.
+const lienAppli = () => location.href.split("#")[0].split("?")[0];
 async function share() {
-  const url = location.href.split("#")[0];
-  const text = `Je révise le BAC et le BFEM avec cette appli : 1 300 QCM corrigés, sujets officiels, cours et devoirs. 10 jours gratuits 👉 ${url}`;
+  const url = lienAppli();
+  const text = `Je révise avec l'appli de Racine School : QCM corrigés, sujets du BAC et du BFEM, cours et devoirs 👉 ${url}`;
   try {
     const blob = await fetch("tuto.mp4").then((r) => r.blob());
     const files = [new File([blob], "racine-school.mp4", { type: "video/mp4" })];
@@ -666,6 +685,44 @@ async function share() {
   } catch (e) { if (e && e.name === "AbortError") return; }
   if (navigator.share) navigator.share({ title: "Racine School", text, url }).catch(() => {});
   else window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+}
+
+// Partager : QR code de l'appli à faire scanner en face, ou à envoyer en image avec le lien (accessible à tous, même après l'essai)
+function qrCanvas(texte, taille = 640) {
+  const q = qrcode(0, "M"); q.addData(texte); q.make();
+  const n = q.getModuleCount(), marge = 4, cv = document.createElement("canvas"), px = Math.floor(taille / (n + 2 * marge));
+  cv.width = cv.height = px * (n + 2 * marge);
+  const g = cv.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = "#000";
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) g.fillRect((c + marge) * px, (r + marge) * px, px, px);
+  return cv;
+}
+function viewPartager() {
+  const url = lienAppli(), cv = qrCanvas(url);
+  $view.innerHTML = `<h1>Partager l'appli</h1>
+    <div class="card" style="text-align:center"><img id="qr-img" src="${cv.toDataURL("image/png")}" alt="QR code de l'appli Racine School" style="width:100%;max-width:320px;margin:0 auto;border-radius:12px">
+      <p class="small muted">En face : ton camarade vise ce code avec l'appareil photo de son téléphone, et l'appli s'ouvre.</p></div>
+    <button class="btn" id="sqr">Envoyer l'image du QR code (WhatsApp ou autre)</button>
+    <button class="btn alt" id="slink">Envoyer le lien</button>
+    <div class="card small"><p>Le lien de l'appli :</p><p><b style="word-break:break-all">${esc(url)}</b></p><button class="btn alt small" id="cp">Copier le lien</button></div>
+    <a class="btn alt" href="#">Retour</a>`;
+  const text = `Je révise avec l'appli de Racine School : QCM corrigés, sujets du BAC et du BFEM, cours et devoirs. Ouvre le lien ou scanne le QR code 👉 ${url}`;
+  document.getElementById("sqr").onclick = async () => {
+    try {
+      const blob = await new Promise((ok) => cv.toBlob(ok, "image/png"));
+      const files = [new File([blob], "qr-racine-school.png", { type: "image/png" })];
+      if (navigator.canShare && navigator.canShare({ files })) return await navigator.share({ files, text, title: "Racine School" });
+      // sans partage de fichier (ordinateur) : l'image est téléchargée, le lien part ensuite
+      const a = document.createElement("a"); a.href = cv.toDataURL("image/png"); a.download = "qr-racine-school.png"; a.click();
+    } catch (e) { if (e && e.name === "AbortError") return; }
+    share();
+  };
+  document.getElementById("slink").onclick = () => (navigator.share ? navigator.share({ title: "Racine School", text, url }).catch(() => {}) : window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank"));
+  document.getElementById("cp").onclick = (e) => {
+    const fini = () => { e.target.textContent = "Lien copié ✓"; };
+    if (navigator.clipboard) navigator.clipboard.writeText(url).then(fini, () => {});
+    else { const t = document.createElement("textarea"); t.value = url; document.body.appendChild(t); t.select(); try { document.execCommand("copy"); fini(); } catch {} t.remove(); }
+  };
 }
 
 // ---------- Navigation
@@ -725,9 +782,10 @@ function render() {
   if (Compte.user && !Compte.proprio && location.hash.startsWith("#admin")) return viewPasAdmin();
   if (Compte.user && Compte.suspendu) return viewSuspendu();
   const [tab, ...rest] = (location.hash.slice(1) || (isStaff() ? "ecole" : "accueil")).split("/"), arg = rest.length ? rest.join("/") : undefined;
+  if (tab === "partager") { viewPartager(); window.scrollTo(0, 0); return; }
   document.getElementById("exam-tag").textContent = S.level || "";
   // onglets selon le profil : l'équipe de l'école a son espace à la place des erreurs et du premium
-  document.querySelectorAll(".tabs a").forEach((a) => { a.hidden = S.role === "parent" ? a.dataset.tab !== "ecole" : isStaff() ? ["erreurs", "premium"].includes(a.dataset.tab) : a.dataset.tab === "ecole"; });
+  document.querySelectorAll(".tabs a").forEach((a) => { a.hidden = S.role === "parent" ? a.dataset.tab !== "ecole" : isStaff() ? ["erreurs", "premium"].includes(a.dataset.tab) : a.dataset.tab === "ecole" || (a.dataset.tab === "premium" && !essaiActif()); });
   // profil et fiche d'inscription d'abord, puis l'espace école (qui ne dépend pas d'une classe)
   document.querySelector(".tabs").hidden = !S.role;
   if (!S.role) return viewRole();
@@ -736,10 +794,10 @@ function render() {
   if (tab === "ecole" && isStaff()) { document.querySelectorAll(".tabs a").forEach((a) => { if (a.dataset.tab === "ecole") a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); }); return viewEcole(); }
   if ((!S.level || !DATA.levels.includes(S.level)) && tab !== "classe") { S.level = null; return viewLevel(); }
   // après l'essai, l'appli est la même pour tous mais réservée aux abonnés : seuls l'accueil, la classe et les progrès restent visibles
-  if (!isPremium() && !["accueil", "classe", "premium", "progres"].includes(tab)) return viewPremium(`Ton essai gratuit de ${TRIAL_DAYS} jours est terminé. Abonne-toi pour continuer à réviser.`);
+  if (!isPremium() && !["accueil", "classe", "premium", "progres", "partager"].includes(tab)) return viewPremium(`Ton essai gratuit de ${TRIAL_DAYS} jours est terminé. Abonne-toi pour continuer à réviser.`);
   document.querySelectorAll(".tabs a").forEach((a) => { if (a.dataset.tab === tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   if ((globalThis.ROUTES || {})[tab]) { ROUTES[tab](arg); window.scrollTo(0, 0); return; }
-  ({ classe: viewLevel, annales: viewAnnales, exercices: viewExercices, "qcm-list": viewQcmList, devoir: () => viewDevoir(arg), duo: () => viewDuo(arg), challenge: viewChallenge, fiches: viewFiches, fiche: () => viewFiche(arg), assistant: viewAssistant, agenda: () => viewAgenda(arg), notions: viewNotions, notion: () => viewNotion(arg), sujet: () => viewGuided(arg), quiz: () => viewQuiz(arg), examen: viewExam, erreurs: viewErrors, progres: viewProgress, premium: () => viewPremium(), carte: viewCarte, notes: () => viewMesNotes(arg), cahier: viewCahier, demandes: viewMesDemandes, messages: () => viewMessagesEleve(arg), documents: viewMesDocuments, badges: viewBadges, assiduite: viewAssiduite, clubs: viewClubs, orientation: viewOrientation, rendre: viewRendre, vie: () => viewVie(arg), outils: () => viewOutils(arg) }[tab === "premium" ? "accueil" : tab] || viewHome)();
+  ({ classe: viewLevel, annales: viewAnnales, exercices: viewExercices, "qcm-list": viewQcmList, devoir: () => viewDevoir(arg), duo: () => viewDuo(arg), challenge: viewChallenge, fiches: viewFiches, fiche: () => viewFiche(arg), assistant: viewAssistant, agenda: () => viewAgenda(arg), notions: viewNotions, notion: () => viewNotion(arg), sujet: () => viewGuided(arg), quiz: () => viewQuiz(arg), examen: viewExam, erreurs: viewErrors, progres: viewProgress, premium: () => viewPremium(), carte: viewCarte, notes: () => viewMesNotes(arg), cahier: viewCahier, demandes: viewMesDemandes, messages: () => viewMessagesEleve(arg), documents: viewMesDocuments, badges: viewBadges, assiduite: viewAssiduite, clubs: viewClubs, orientation: viewOrientation, rendre: viewRendre, vie: () => viewVie(arg), outils: () => viewOutils(arg) }[tab === "premium" && !essaiActif() ? "accueil" : tab] || viewHome)();
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", render);
