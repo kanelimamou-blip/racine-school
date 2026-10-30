@@ -72,6 +72,7 @@ async function vueRegistres(ctx) {
   const pt = S.role !== "directeur" ? await Ecole.lire("registres", `pt-${today()}-${Ecole.myId()}`).catch(() => null) : null;
   return `${S.role !== "directeur" ? `<div class="card"><h2>🕗 Mon pointage du jour</h2>${pt ? `<p class="small">Arrivé à <b>${esc(pt.arrivee)}</b>${pt.depart ? `, parti à <b>${esc(pt.depart)}</b>` : ""}.</p>` : `<p class="small muted">Pas encore pointé aujourd'hui.</p>`}
       ${!pt ? `<button class="btn" id="pt-in">Je suis arrivé</button>` : !pt.depart ? `<button class="btn alt" id="pt-out">Je pars</button>` : ""}</div>` : ""}
+    ${S.role === "directeur" ? `<div class="btns"><a class="btn alt small" href="#ecole/journal">🕵️ Historique des modifications</a><a class="btn alt small" href="#ecole/rapport">🗂️ Rapport du mois</a><a class="btn alt small" href="#ecole/cloture">🔒 Clôture de caisse</a></div>` : ""}
     <div class="grid rub">${registresDuRole().map(([k, d]) => `<a class="subj tile" href="#ecole/registre/${k}"><span class="ico">${d.ico}</span><b>${d.titre}</b></a>`).join("")}</div>`;
 }
 
@@ -183,7 +184,7 @@ async function vuePaiementsComplet(ctx) {
     const depense = dep.filter((x) => String(x.date).startsWith(m)).reduce((n, x) => n + (+x.montant || 0), 0);
     return { m, attendu, encaisse, depense };
   });
-  return `${vuePaiements(ctx)}<div class="card"><h2>Trésorerie</h2><p class="small muted">Scolarité attendue, encaissée (reçus enregistrés dans l'appli) et dépenses du registre, par mois.</p>
+  return `${vuePaiements(ctx)}${await relancesCarte(ctx)}<div class="card"><h2>Trésorerie</h2><p class="small muted">Scolarité attendue, encaissée (reçus enregistrés dans l'appli) et dépenses du registre, par mois.</p>
     <table class="tab-notes"><thead><tr><th>Mois</th><th>Attendu</th><th>Encaissé</th><th>Dépensé</th><th>Solde</th></tr></thead><tbody>
     ${lignes.map((x) => `<tr><td>${moisNom(x.m)}</td><td>${Math.round(x.attendu / 1000)} k</td><td class="ok-txt">${Math.round(x.encaisse / 1000)} k</td><td class="ko-txt">${Math.round(x.depense / 1000)} k</td><td><b>${Math.round((x.encaisse - x.depense) / 1000)} k</b></td></tr>`).join("")}</tbody></table>
     <p class="small muted">Montants en milliers de FCFA.</p></div>`;

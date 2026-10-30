@@ -219,6 +219,42 @@ service cloud.firestore {
       allow read: if signedIn();
       allow write: if isDir();
     }
+    // qui a lu une annonce, et qui sera présent : chacun écrit la sienne, la direction voit tout
+    match /lectures/{id} {
+      allow read: if signedIn() && (isDir() || resource == null || resource.data.par == request.auth.uid);
+      allow create, update: if signedIn() && request.resource.data.par == request.auth.uid && id == request.resource.data.annonce + '_' + request.auth.uid;
+    }
+    // sondages de la direction : un vote par personne, les résultats pour la direction
+    match /sondages/{id} {
+      allow read: if signedIn();
+      allow write: if isDir();
+    }
+    match /votes/{id} {
+      allow read: if signedIn() && (isDir() || resource == null || resource.data.par == request.auth.uid);
+      allow create, update: if signedIn() && request.resource.data.par == request.auth.uid && id == request.resource.data.sondage + '_' + request.auth.uid;
+    }
+    // discussions : l'équipe, les professeurs, et chaque classe (ses élèves et l'équipe)
+    match /messages/{id} {
+      allow read: if signedIn() && (resource.data.canal == 'profs' ? isStaff() : isEquipe() || get(/databases/$(db)/documents/eleves/$(request.auth.uid)).data.classeId == resource.data.canal);
+      allow create: if signedIn() && request.resource.data.par == request.auth.uid && request.resource.data.texte.size() <= 600
+        && (request.resource.data.canal == 'profs' ? isStaff() : isEquipe() || get(/databases/$(db)/documents/eleves/$(request.auth.uid)).data.classeId == request.resource.data.canal);
+      allow delete: if isDir() || (signedIn() && resource.data.par == request.auth.uid);
+    }
+    // documents et supports de cours (fichiers légers gardés dans la base, ou un lien)
+    match /documents/{id} {
+      allow read: if signedIn();
+      allow create: if isStaff() && request.resource.data.par == request.auth.uid;
+      allow delete: if isDir() || (isStaff() && resource.data.par == request.auth.uid);
+    }
+    // historique des modifications sensibles : écrit par l'équipe, lu par la direction, jamais modifié
+    match /journal/{id} {
+      allow create: if isEquipe() && request.resource.data.par == request.auth.uid;
+      allow read: if isDir();
+    }
+    // dossier administratif scanné de chaque élève : direction et caisse
+    match /dossiers/{eleve} {
+      allow read, write: if isCaisse();
+    }
     // classes, mensualités, année scolaire : réglés par la direction
     match /ecole/{doc} {
       allow read: if signedIn();

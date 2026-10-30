@@ -175,3 +175,8 @@ details summary{cursor:pointer;padding:6px 0}
 .justif{max-width:100%;max-height:320px;border-radius:10px;object-fit:contain;background:#000}
 .reponse{background:var(--ok-soft);border-radius:8px;padding:6px 10px}
 button.subj.tile{font:inherit;color:inherit;text-align:left;cursor:pointer}
+/* messagerie */
+.chat{max-height:60vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+.bulle{background:var(--surface-2);border-radius:12px 12px 12px 4px;padding:8px 10px;max-width:85%;align-self:flex-start}
+.bulle p{margin:4px 0 0;white-space:pre-wrap}
+.bulle.moi{background:var(--accent-soft);border-radius:12px 12px 4px 12px;align-self:flex-end}
