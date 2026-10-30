@@ -322,6 +322,15 @@ const Ecole = (() => {
     mettre("preinscriptions", "demo-p2", { prenom: "Babacar", nom: "Ndour", naissance: "2011-11-02", ecole: "CEM de Grand-Yoff", parent: "M. Ndour", tel: "77 000 88 02", classe: "2nde", statut: "Liste d'attente", le: t(-6) });
     // retards de la semaine au portail, pour les seuils
     [1, 2, 3].forEach((k) => mettre("portail", t(-k), { date: t(-k), retards: { [ids[11]]: "08:0" + k, [ids[23]]: "07:5" + k } }));
+    // demandes en attente : justificatif, autorisation, rendez-vous, question, congé, dépense
+    const D = (id, x) => mettre("demandes", "demo-d" + id, { statut: "attente", reponse: "", le: t(-1), par: "demo", ...x });
+    D(1, { type: "justificatif", role: "parent", ...ref(11), cid: el(11).classeId, parNom: el(11).parent, date: today(), texte: "Fièvre depuis hier soir, il reste à la maison aujourd'hui." });
+    D(2, { type: "autorisation", role: "parent", ...ref(23), cid: el(23).classeId, parNom: el(23).parent, objet: "Sortie anticipée", date: today(), texte: "Rendez-vous chez le dentiste à 15 h.", signe: true });
+    D(3, { type: "rdv", role: "parent", ...ref(5), cid: el(5).classeId, parNom: el(5).parent, avec: "La direction", date: t(4), texte: "Parler de l'orientation en seconde." });
+    D(4, { type: "question", role: "eleve", eleveId: el(1).id, parNom: `${el(1).prenom} ${el(1).nom}`, classe: el(1).classe, cid: el(1).classeId, matiere: "Mathématiques", texte: "Je n'ai pas compris comment simplifier une fraction quand le numérateur est plus grand." });
+    D(5, { type: "conge", role: "prof", parNom: "Mme Khady Fall", du: t(3), au: t(3), texte: "Formation à l'inspection d'académie." });
+    D(6, { type: "depense", role: "personnel", parNom: "M. Lamine Kane", libelle: "Cartouches d'encre", montant: 45000, texte: "Pour imprimer les sujets des compositions." });
+    D(7, { type: "signalement", role: "eleve", anonyme: true, parNom: "", classe: "4e B", texte: "Des grands de 3e prennent le goûter des petits à la récréation." });
     mettre("absprofs", "demo-ab0", { profNom: "M. Ousmane Sarr", date: today(), motif: "Raison de santé", remplacant: "", classes: "6e A, 5e C", par: "demo" });
     mettre("absprofs", "demo-ab1", { profNom: "Mme Khady Fall", date: t(3), motif: "Formation à l'inspection", remplacant: "Mme Aminata Diallo", classes: "4e B, 3e A", par: "demo" });
     L.col = col;
@@ -466,16 +475,16 @@ function ficheCard() {
   if (S.role !== "eleve" || !S.fiche) return "";
   const f = S.fiche;
   return `<div class="card lib-card fiche-card"><a class="row" style="justify-content:flex-start;text-decoration:none;color:inherit" href="#inscription">${avatar(f)}<span class="grow"><b>${esc(nomComplet(f))}</b><br><span class="small muted">${esc(f.classe)} · Racine School</span></span></a>
-    <span class="row" style="gap:6px"><a class="btn alt small" href="#carte">🪪 Ma carte</a><a class="btn alt small" href="#notes">📑 Mes notes</a></span></div>`;
+    <span class="row" style="gap:6px"><a class="btn alt small" href="#carte">🪪 Ma carte</a><a class="btn alt small" href="#notes">📑 Mes notes</a><a class="btn alt small" href="#demandes">✉️ Questions</a></span></div>`;
 }
 
 // ---------- Espace école (équipe et parents)
 const ONGLETS = {
-  directeur: [["", "Tableau"], ["eleves", "Élèves"], ["paiements", "Paiements"], ["bulletins", "Bulletins"], ["edt", "Emploi du temps"], ["programme", "Programme"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["registres", "Registres"], ["equipe", "Équipe"], ["reglages", "Réglages"]],
-  prof: [["", "Mes classes"], ["appel", "Appel"], ["notes", "Notes"], ["programme", "Programme"], ["quiz", "Quiz en classe"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["registres", "Registres"], ["equipe", "Annuaire"]],
-  surveillant: [["", "Aujourd'hui"], ["portail", "Portail"], ["eleves", "Élèves"], ["registres", "Registres"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
-  personnel: [["", "Caisse"], ["eleves", "Élèves"], ["registres", "Registres"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
-  parent: [["", "Mon enfant"], ["annonces", "Annonces"]],
+  directeur: [["", "Tableau"], ["eleves", "Élèves"], ["paiements", "Paiements"], ["bulletins", "Bulletins"], ["edt", "Emploi du temps"], ["programme", "Programme"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["demandes", "Demandes"], ["registres", "Registres"], ["equipe", "Équipe"], ["reglages", "Réglages"]],
+  prof: [["", "Mes classes"], ["appel", "Appel"], ["notes", "Notes"], ["programme", "Programme"], ["quiz", "Quiz en classe"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["demandes", "Demandes"], ["registres", "Registres"], ["equipe", "Annuaire"]],
+  surveillant: [["", "Aujourd'hui"], ["portail", "Portail"], ["eleves", "Élèves"], ["demandes", "Demandes"], ["registres", "Registres"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
+  personnel: [["", "Caisse"], ["eleves", "Élèves"], ["demandes", "Demandes"], ["registres", "Registres"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
+  parent: [["", "Mon enfant"], ["demandes", "Démarches"], ["annonces", "Annonces"]],
 };
 const TITRES = { directeur: "Direction", prof: "Espace professeur", surveillant: "Vie scolaire", personnel: "Administration", parent: "Espace parent" };
 // pages ouvertes depuis une autre (fiche d'un élève, reçu, certificat), selon le profil
@@ -499,7 +508,7 @@ async function viewEcole() {
       ${Ecole.isDemo ? `<p class="demo small noprint">Démonstration : élèves et équipe fictifs. ${role === "directeur" ? `<button class="linkbtn" id="demo-off">Effacer la démo</button>` : ""}</p>` : ""}${ongletsEcole(actif)}`;
     const views = {
       "": { directeur: vueEnsemble, prof: vueProfAccueil, surveillant: vueAujourdhuiComplet, personnel: vueCaisse, parent: vueParent }[role],
-      eleves: vueEleves, eleve: vueFiche, paiements: vuePaiementsComplet, registres: vueRegistres, registre: vueRegistre, convocation: vueConvocation, devoirs: vueDevoirs, reglages: vueReglages,
+      eleves: vueEleves, eleve: vueFiche, paiements: vuePaiementsComplet, registres: vueRegistres, registre: vueRegistre, demandes: vueDemandes, convocation: vueConvocation, devoirs: vueDevoirs, reglages: vueReglages,
       annonces: vueAnnonces, equipe: vueEquipeComplete, edt: vueEdt, programme: vueProgramme, appel: vueAppel, quiz: vueQuiz, portail: vuePortail, recu: vueRecu, certificat: vueCertificat,
       notes: vueNotes, bulletins: vueBulletins, bulletin: vueBulletin,
     };

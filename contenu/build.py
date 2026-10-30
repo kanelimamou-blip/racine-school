@@ -207,6 +207,13 @@ service cloud.firestore {
       allow create: if signedIn();
       allow read, update, delete: if isCaisse();
     }
+    // demandes : chacun dépose les siennes et les relit ; l'équipe les traite
+    match /demandes/{id} {
+      allow create: if signedIn() && request.resource.data.par == request.auth.uid;
+      allow read: if signedIn() && (isEquipe() || resource.data.par == request.auth.uid);
+      allow update: if isEquipe();
+      allow delete: if isDir() || (signedIn() && resource.data.par == request.auth.uid);
+    }
     // annonces et calendrier de l'école : publiés par la direction, lus par tous
     match /annonces/{id} {
       allow read: if signedIn();

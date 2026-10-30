@@ -171,3 +171,7 @@ details.card summary{cursor:pointer}
 .creneau{padding:6px 0;border-bottom:1px solid var(--line);gap:8px}.creneau .btn{width:auto;flex:none;padding:6px 10px}
 .chap{padding:6px 0;border-bottom:1px solid var(--line);gap:10px}.chap input{flex:none;width:22px;height:22px}
 details summary{cursor:pointer;padding:6px 0}
+.demande{gap:6px}.demande p{margin:0}.demande .btn{width:auto}
+.justif{max-width:100%;max-height:320px;border-radius:10px;object-fit:contain;background:#000}
+.reponse{background:var(--ok-soft);border-radius:8px;padding:6px 10px}
+button.subj.tile{font:inherit;color:inherit;text-align:left;cursor:pointer}
