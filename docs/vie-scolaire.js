@@ -285,6 +285,7 @@ async function remplirAccueilEleve() {
   const el = document.getElementById("ecole-accueil");
   if (!el || S.role !== "eleve" || !S.fiche) return;
   verifierNouveautes().catch(() => {});
+  if (S.dirReel) { el.insertAdjacentHTML("beforebegin", `<div class="row noprint voir">${voirComme().replace(/^<div[^>]*>|<\/div>$/g, "")}</div>`); lierVoir(); }
   const [annonces, seances, edt, defi] = await Promise.all([Ecole.liste("annonces").catch(() => []), Ecole.liste("seances", "cid", S.fiche.classeId).catch(() => []), edtDuJour().catch(() => ""), defiCarteEleve().catch(() => "")]);
   const recent = (d) => (new Date(today()) - new Date(d)) / 864e5 <= 3;
   const vus = seances.filter((s) => recent(s.date)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
