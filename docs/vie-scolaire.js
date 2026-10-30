@@ -271,12 +271,12 @@ async function viewCarte() {
 async function remplirAccueilEleve() {
   const el = document.getElementById("ecole-accueil");
   if (!el || S.role !== "eleve" || !S.fiche) return;
-  const [annonces, seances] = await Promise.all([Ecole.liste("annonces").catch(() => []), Ecole.liste("seances", "cid", S.fiche.classeId).catch(() => [])]);
+  const [annonces, seances, edt] = await Promise.all([Ecole.liste("annonces").catch(() => []), Ecole.liste("seances", "cid", S.fiche.classeId).catch(() => []), edtDuJour().catch(() => "")]);
   const recent = (d) => (new Date(today()) - new Date(d)) / 864e5 <= 3;
   const vus = seances.filter((s) => recent(s.date)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
   const ann = annoncesPour(annonces).sort((a, b) => String(b.le).localeCompare(String(a.le))).slice(0, 2);
   if (!document.body.contains(el)) return;
-  el.innerHTML = `${vus.length ? `<div class="card"><h2>📘 Vu en classe</h2>${vus.map((s) => `<div class="row small"><span><b>${esc(s.matiere || "")}</b> : ${esc(s.titre)}<br><span class="muted">${s.date === today() ? "aujourd'hui" : jourFr(s.date)}</span></span>${s.sid ? `<a class="btn alt small" href="#quiz/${s.sid}">Réviser</a>` : ""}</div>`).join("")}</div>` : ""}
+  el.innerHTML = `${edt}${vus.length ? `<div class="card"><h2>📘 Vu en classe</h2>${vus.map((s) => `<div class="row small"><span><b>${esc(s.matiere || "")}</b> : ${esc(s.titre)}<br><span class="muted">${s.date === today() ? "aujourd'hui" : jourFr(s.date)}</span></span>${s.sid ? `<a class="btn alt small" href="#quiz/${s.sid}">Réviser</a>` : ""}</div>`).join("")}<a class="small" href="#cahier">Tout le cahier de textes ›</a></div>` : ""}
     ${ann.length ? `<div class="card"><h2>📢 Annonces de l'école</h2>${ann.map((a) => `<p class="small"><b>${esc(a.titre)}</b>${a.date ? ` · ${jourFr(a.date)}` : ""}<br><span class="muted">${esc(a.texte || "")}</span></p>`).join("")}</div>` : ""}`;
 }
 

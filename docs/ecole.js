@@ -284,6 +284,18 @@ const Ecole = (() => {
         mettre("notes", `demo-n${ci}-${mi}-${ti}`, { cid: c.id, classe: c.nom, sid: m.id, matiere: m.name, titre, type, trimestre: "1", coef, sur: 20, date: t(j), notes, par: "demo", parNom: "Équipe pédagogique" });
       }));
     });
+    // emplois du temps : matinées du lundi au samedi, trois après-midi ; un professeur par matière
+    const profDe = (nom) => /math/i.test(nom) ? "Mme Aminata Diallo" : /fran/i.test(nom) ? "M. Ousmane Sarr" : /physi|svt|vie/i.test(nom) ? "Mme Khady Fall" : `M. ${pick(N)} (${nom.split(" ")[0]})`;
+    const plages = [[0, "08:00", "10:00"], [0, "10:15", "12:00"], [0, "15:00", "17:00"], [1, "08:00", "10:00"], [1, "10:15", "12:00"], [2, "08:00", "10:00"], [2, "10:15", "12:00"], [3, "08:00", "10:00"], [3, "10:15", "12:00"], [3, "15:00", "17:00"], [4, "08:00", "10:00"], [4, "10:15", "12:00"], [5, "08:00", "10:00"], [5, "10:15", "12:00"]];
+    cfg.classes.forEach((c, ci) => {
+      const mats = subjectsOf(c.level).filter((x) => !/annales/.test(x.id));
+      // l'équipe fictive enseigne dans les trois premières classes ; ailleurs, d'autres professeurs
+      const profs = Object.fromEntries(mats.map((m) => [m.id, ci < 3 ? profDe(m.name) : `${pick(["M.", "Mme"])} ${pick(N)} (${m.name.split(/[ -]/)[0]})`]));
+      mettre("edt", c.id, { cid: c.id, classe: c.nom, creneaux: plages.map(([jour, debut, fin], k) => { const m = mats[(k + ci) % mats.length]; return { jour, debut, fin, sid: m.id, matiere: m.name, prof: profs[m.id], salle: "Salle " + (ci + 1) }; }) });
+      mats.forEach((m) => { const n = programmeDe(m.id).length; if (n) mettre("progressions", `${c.id}_${m.id}`, { cid: c.id, sid: m.id, faits: [...Array(Math.floor(n * (0.05 + rnd() * 0.3))).keys()], par: "demo", parNom: profs[m.id], le: t(-Math.floor(rnd() * 10)) }); });
+    });
+    mettre("absprofs", "demo-ab0", { profNom: "M. Ousmane Sarr", date: today(), motif: "Raison de santé", remplacant: "", classes: "6e A, 5e C", par: "demo" });
+    mettre("absprofs", "demo-ab1", { profNom: "Mme Khady Fall", date: t(3), motif: "Formation à l'inspection", remplacant: "Mme Aminata Diallo", classes: "4e B, 3e A", par: "demo" });
     L.col = col;
     L.paiements = pay; L.demo = true; keep();
   }
@@ -430,8 +442,8 @@ function ficheCard() {
 
 // ---------- Espace école (équipe et parents)
 const ONGLETS = {
-  directeur: [["", "Tableau"], ["eleves", "Élèves"], ["paiements", "Paiements"], ["bulletins", "Bulletins"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["equipe", "Équipe"], ["reglages", "Réglages"]],
-  prof: [["", "Mes classes"], ["appel", "Appel"], ["notes", "Notes"], ["quiz", "Quiz en classe"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
+  directeur: [["", "Tableau"], ["eleves", "Élèves"], ["paiements", "Paiements"], ["bulletins", "Bulletins"], ["edt", "Emploi du temps"], ["programme", "Programme"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["equipe", "Équipe"], ["reglages", "Réglages"]],
+  prof: [["", "Mes classes"], ["appel", "Appel"], ["notes", "Notes"], ["programme", "Programme"], ["quiz", "Quiz en classe"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
   surveillant: [["", "Aujourd'hui"], ["portail", "Portail"], ["eleves", "Élèves"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
   personnel: [["", "Caisse"], ["eleves", "Élèves"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
   parent: [["", "Mon enfant"], ["annonces", "Annonces"]],
@@ -457,9 +469,9 @@ async function viewEcole() {
     const head = `<div class="row noprint"><h1>${titre}</h1><span class="small muted">${role === "parent" ? "" : esc(S.staffNom || "")}</span></div>
       ${Ecole.isDemo ? `<p class="demo small noprint">Démonstration : élèves et équipe fictifs. ${role === "directeur" ? `<button class="linkbtn" id="demo-off">Effacer la démo</button>` : ""}</p>` : ""}${ongletsEcole(actif)}`;
     const views = {
-      "": { directeur: vueEnsemble, prof: vueClassesProf, surveillant: vueAujourdhui, personnel: vueCaisse, parent: vueParent }[role],
+      "": { directeur: vueEnsemble, prof: vueProfAccueil, surveillant: vueAujourdhui, personnel: vueCaisse, parent: vueParent }[role],
       eleves: vueEleves, eleve: vueFiche, paiements: vuePaiements, devoirs: vueDevoirs, reglages: vueReglages,
-      annonces: vueAnnonces, equipe: vueEquipe, appel: vueAppel, quiz: vueQuiz, portail: vuePortail, recu: vueRecu, certificat: vueCertificat,
+      annonces: vueAnnonces, equipe: vueEquipeComplete, edt: vueEdt, programme: vueProgramme, appel: vueAppel, quiz: vueQuiz, portail: vuePortail, recu: vueRecu, certificat: vueCertificat,
       notes: vueNotes, bulletins: vueBulletins, bulletin: vueBulletin,
     };
     $view.innerHTML = head + (await views[sub](ctx, arg, arg2));
