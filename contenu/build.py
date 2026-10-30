@@ -92,18 +92,41 @@ service cloud.firestore {
       return p.size() == 2 && p[0].size() == 5
         && hashing.sha256('SECRET' + p[0]).toHexString().lower()[0:6] == p[1].lower();
     }
+    // propriétaire de l'appli (le vendeur) : reconnu par le SHA-256 de son e-mail vérifié, comme dans docs/compte.js
+    function proprio() {
+      return request.auth != null && request.auth.token.email_verified == true
+        && hashing.sha256(request.auth.token.email.lower()).toHexString().lower() == 'PROPRIO_HASH';
+    }
     match /users/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      // création : date fixée par le serveur et sans premium
+      allow read: if request.auth != null && (request.auth.uid == uid || proprio());
+      // création : date fixée par le serveur, sans premium et sans suspension
       allow create: if request.auth != null && request.auth.uid == uid
         && request.resource.data.created == request.time
-        && request.resource.data.premium == false;
-      // la date de création ne change jamais ; le premium ne s'obtient qu'avec un code réclamé par cet élève
+        && request.resource.data.premium == false
+        && request.resource.data.get('suspendu', false) == false;
+      // la date de création et la suspension ne changent pas ; le premium ne s'obtient qu'avec un code réclamé par cet élève
       allow update: if request.auth != null && request.auth.uid == uid
         && request.resource.data.created == resource.data.created
+        && request.resource.data.get('suspendu', false) == resource.data.get('suspendu', false)
         && (request.resource.data.premium == resource.data.premium
           || (request.resource.data.premium == true
             && getAfter(/databases/$(db)/documents/claims/$(request.resource.data.code)).data.uid == uid));
+      // le propriétaire suspend ou réactive un compte, sans toucher au reste
+      allow update: if proprio() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['suspendu'])
+        && request.resource.data.suspendu is bool;
+    }
+    // journal des erreurs : chaque compte connecté ajoute les siennes, seul le propriétaire les lit et les efface
+    match /erreurs/{id} {
+      allow read, delete: if proprio();
+      allow update: if false;
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'compte', 'type', 'message', 'page', 'tel', 'at'])
+        && request.resource.data.type in ['plantage', 'refus']
+        && request.resource.data.message is string && request.resource.data.message.size() <= 500
+        && request.resource.data.page is string && request.resource.data.page.size() <= 100
+        && request.resource.data.compte is string && request.resource.data.compte.size() <= 100
+        && request.resource.data.tel is string && request.resource.data.tel.size() <= 200
+        && request.resource.data.at == request.time;
     }
     // sessions de groupe : chaque élève connecté écrit seulement sa propre note, le groupe lit le classement
     match /sessions/{code}/scores/{uid} {
@@ -125,7 +148,11 @@ service cloud.firestore {
     }
 
     // ---------- Espace école : direction, professeurs, surveillants, personnel, parents
-    function signedIn() { return request.auth != null; }
+    // un compte suspendu par le propriétaire n'a plus accès aux données de l'école
+    function signedIn() {
+      return request.auth != null && !(exists(/databases/$(db)/documents/users/$(request.auth.uid))
+        && get(/databases/$(db)/documents/users/$(request.auth.uid)).data.get('suspendu', false) == true);
+    }
     function staffRole() {
       let p = /databases/$(db)/documents/staff/$(request.auth.uid);
       return signedIn() && exists(p) ? get(p).data.role : '';
@@ -312,6 +339,8 @@ service cloud.firestore {
 }
 """
 PRIVATE = Path("/mnt/project-files/racine-school/prive")
+# SHA-256 de l'e-mail du propriétaire (même valeur que PROPRIO_HASH dans docs/compte.js)
+PROPRIO_HASH = "5b8002b6edb3c6b43af5a05915211af5663f8a33404dca218b03e6d72441bbf1"
 SECRET_FILE = PRIVATE / "secret-codes.txt"
 
 
@@ -346,7 +375,7 @@ def new_codes(n, dest):
 
 def rules_texte(sec):
     """Règles à coller dans la console : sans commentaires ni lignes vides, en ASCII (le copier-coller depuis un téléphone abîme les accents)."""
-    lignes = [l for l in RULES.replace("SECRET", sec).splitlines() if l.strip() and not l.strip().startswith("//")]
+    lignes = [l for l in RULES.replace("SECRET", sec).replace("PROPRIO_HASH", PROPRIO_HASH).splitlines() if l.strip() and not l.strip().startswith("//")]
     return "\n".join(lignes) + "\n"
 
 
@@ -447,8 +476,11 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--codes", type=int, default=0)
     p.add_argument("--dest", default="/mnt/project-files/racine-school/prive/codes-premium.txt")
+    p.add_argument("--regles", action="store_true", help="réécrit seulement les règles Firestore à coller dans la console")
     p.add_argument("--cles", action="store_true", help="écrit les clés d'entrée de l'équipe (direction, professeurs, surveillants, personnel)")
     args = p.parse_args()
+    if args.regles:
+        (PRIVATE / "firestore.rules").write_text(rules_texte(secret()))
     if args.cles:
         new_keys()
     if args.codes:

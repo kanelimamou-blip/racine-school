@@ -679,7 +679,7 @@ function viewLogin(err = "", ok = "") {
     <div class="row"><button class="btn alt" style="flex:1" id="login">Se connecter</button><button class="btn alt" style="flex:1" id="signup">Créer un compte</button></div>
     <button class="linkbtn small" id="forgot">Mot de passe oublié ?</button>
     ${err ? `<p class="msg-ko small">${esc(err)}</p>` : ""}${ok ? `<p class="msg-ok small">${esc(ok)}</p>` : ""}</div>`;
-  const done = (p) => { applyProfile(p); render(); };
+  const done = (p) => { applyProfile(p); Compte.activite({ role: S.role, nom: S.fiche ? nomComplet(S.fiche) : S.staffNom }); render(); };
   const mail = () => document.getElementById("mail").value.trim(), pass = () => document.getElementById("pass").value;
   const fail = (e) => viewLogin(({
     "auth/invalid-email": "Adresse e-mail invalide.",
@@ -716,6 +716,9 @@ function render() {
   clearInterval(timer);
   // hors connexion (Firebase injoignable), l'appli reste utilisable en local
   if (Compte.enabled && Compte.ready && !Compte.user) return viewLogin();
+  // compte du propriétaire de l'appli : son espace de supervision ; compte suspendu : plus d'accès
+  if (Compte.user && Compte.proprio) return viewProprio();
+  if (Compte.user && Compte.suspendu) return viewSuspendu();
   const [tab, ...rest] = (location.hash.slice(1) || (isStaff() ? "ecole" : "accueil")).split("/"), arg = rest.length ? rest.join("/") : undefined;
   document.getElementById("exam-tag").textContent = S.level || "";
   // onglets selon le profil : l'équipe de l'école a son espace à la place des erreurs et du premium
@@ -742,5 +745,5 @@ document.getElementById("install").onclick = () => { if (deferred) { deferred.pr
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
 Promise.all([fetch("data/questions.json", { cache: "no-cache" }).then((r) => r.json()), fetch("data/config.json", { cache: "no-cache" }).then((r) => r.json())])
-  .then(async ([d, c]) => { DATA = d; CFG = c; applyProfile(await Compte.start().catch(() => null)); await ecoleStart().catch(() => {}); render(); })
+  .then(async ([d, c]) => { DATA = d; CFG = c; applyProfile(await Compte.start().catch(() => null)); await ecoleStart().catch(() => {}); Compte.activite({ role: S.role, nom: S.fiche ? nomComplet(S.fiche) : S.staffNom }); render(); })
   .catch(() => { $view.innerHTML = `<div class="card"><p>Impossible de charger les questions. Vérifie ta connexion puis recharge la page.</p></div>`; });

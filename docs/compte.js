@@ -11,10 +11,14 @@ const FIREBASE_CONFIG = {
   appId: "1:844843150303:web:092035ec1e23816432326a",
 };
 
+// Espace propriétaire : réservé au compte du vendeur de l'appli. On ne publie que le SHA-256 de son e-mail ;
+// les règles Firestore font la même vérification (e-mail vérifié), donc personne d'autre ne lit ces données.
+const PROPRIO_HASH = "5b8002b6edb3c6b43af5a05915211af5663f8a33404dca218b03e6d72441bbf1";
+
 const Compte = (() => {
   const SDK = "https://www.gstatic.com/firebasejs/10.12.2/";
   const enabled = !!FIREBASE_CONFIG;
-  let auth = null, db = null, user = null, doc = null, timer = null, ready = false;
+  let auth = null, db = null, user = null, doc = null, timer = null, ready = false, proprio = false;
 
   const load = (src) => new Promise((ok, ko) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = ko; document.head.appendChild(s); });
 
@@ -25,6 +29,9 @@ const Compte = (() => {
     await Promise.all([load(SDK + "firebase-auth-compat.js"), load(SDK + "firebase-firestore-compat.js")]);
     firebase.initializeApp(FIREBASE_CONFIG);
     auth = firebase.auth(); db = firebase.firestore();
+    // tests en local avec l'émulateur Firebase : http://localhost:5000/?emu
+    if (location.hostname === "localhost" && /[?&]emu\b/.test(location.search)) { auth.useEmulator("http://localhost:9099"); db.useEmulator("localhost", 8080); }
+    surveiller();
     await auth.getRedirectResult().catch(() => null);
     user = await new Promise((ok) => { const off = auth.onAuthStateChanged((u) => { off(); ok(u); }); });
     ready = true;
@@ -40,7 +47,9 @@ const Compte = (() => {
       snap = await ref.get();
     }
     doc = snap.data();
-    return { created: doc.created ? doc.created.toDate() : new Date(), premium: !!doc.premium, data: doc.data || {}, name: user.displayName || "", email: user.email || "" };
+    proprio = !!(user.email && user.emailVerified) && (await sha(user.email.toLowerCase())) === PROPRIO_HASH;
+    envoyerErreurs();
+    return { created: doc.created ? doc.created.toDate() : new Date(), premium: !!doc.premium, suspendu: doc.suspendu === true, data: doc.data || {}, name: user.displayName || "", email: user.email || "" };
   }
 
   async function signIn() {
@@ -101,5 +110,63 @@ const Compte = (() => {
       .onSnapshot((snap) => cb(snap.docs.map((d) => ({ ...d.data(), me: d.id === user.uid }))), err);
   }
 
-  return { enabled, start, postScore, listenScores, signIn, signInEmail, resetPassword, signOut, claim, save, get user() { return user; }, get ready() { return ready; } };
+  const sha = async (t) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)))].map((x) => x.toString(16).padStart(2, "0")).join("");
+
+  // Dernière activité, vue par le propriétaire : au plus une écriture par heure et par téléphone
+  function activite(info) {
+    if (!user || !db) return;
+    const k = "racine-vu-" + user.uid, last = +localStorage.getItem(k) || 0;
+    if (Date.now() - last < 36e5) return;
+    try { localStorage.setItem(k, String(Date.now())); } catch {}
+    db.collection("users").doc(user.uid).update({ vu: firebase.firestore.FieldValue.serverTimestamp(), email: user.email || "", nom: String(info.nom || user.displayName || "").slice(0, 60), role: info.role || "" }).catch(() => {});
+  }
+
+  // Journal des erreurs : plantages et actions refusées par le serveur, envoyés au propriétaire (au plus 20 par ouverture)
+  const FILE = "racine-erreurs";
+  let envoyees = 0;
+  const vues = new Set();
+  function erreur(type, message) {
+    message = String(message || "").slice(0, 500);
+    const cle = type + message;
+    if (!message || vues.has(cle) || envoyees >= 20) return;
+    vues.add(cle); envoyees++;
+    const e = { type, message, page: (location.hash || "#accueil").slice(0, 100), quand: Date.now() };
+    let file = [];
+    try { file = JSON.parse(localStorage.getItem(FILE) || "[]"); } catch {}
+    try { localStorage.setItem(FILE, JSON.stringify([...file, e].slice(-20))); } catch {}
+    envoyerErreurs();
+  }
+  function envoyerErreurs() {
+    if (!user || !db || !add) return;
+    let file = [];
+    try { file = JSON.parse(localStorage.getItem(FILE) || "[]"); localStorage.removeItem(FILE); } catch {}
+    const compte = String(user.email || user.displayName || user.uid).slice(0, 100);
+    for (const e of file) {
+      add.call(db.collection("erreurs"), { uid: user.uid, compte, type: e.type, message: e.message, page: e.page,
+        tel: navigator.userAgent.slice(0, 200), at: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+    }
+  }
+  // Toute lecture ou écriture refusée par les règles Firestore est notée, même quand l'appli l'ignore
+  let add = null;
+  function surveiller() {
+    const fs = firebase.firestore, refus = (e) => { if (e && e.code === "permission-denied") erreur("refus", e.message); throw e; };
+    add = fs.CollectionReference.prototype.add;
+    const wrap = (cls, names) => cls && names.forEach((n) => { const proto = cls.prototype, f = proto[n]; if (f) proto[n] = function (...a) { return f.apply(this, a).catch(refus); }; });
+    wrap(fs.DocumentReference, ["get", "set", "update", "delete"]);
+    wrap(fs.CollectionReference, ["add"]);
+    wrap(fs.Query, ["get"]);
+    wrap(fs.WriteBatch, ["commit"]);
+  }
+  window.addEventListener("error", (e) => erreur("plantage", `${e.message} (${String(e.filename || "").split("/").pop()}:${e.lineno})`));
+  window.addEventListener("unhandledrejection", (e) => { const r = e.reason || {}; if (r.code !== "permission-denied") erreur("plantage", r.message || String(r)); });
+
+  // Données de l'espace propriétaire (les règles refusent tout autre compte)
+  const comptes = async () => (await db.collection("users").get()).docs.map((d) => ({ ...d.data(), uid: d.id }));
+  const erreurs = async () => (await db.collection("erreurs").orderBy("at", "desc").limit(200).get()).docs.map((d) => ({ ...d.data(), id: d.id }));
+  const suspendre = (uid, oui) => db.collection("users").doc(uid).update({ suspendu: oui });
+  async function viderErreurs(ids) {
+    for (let i = 0; i < ids.length; i += 400) { const b = db.batch(); ids.slice(i, i + 400).forEach((id) => b.delete(db.collection("erreurs").doc(id))); await b.commit(); }
+  }
+
+  return { enabled, start, activite, erreur, comptes, erreurs, suspendre, viderErreurs, get proprio() { return proprio; }, get suspendu() { return !!(doc && doc.suspendu === true); }, postScore, listenScores, signIn, signInEmail, resetPassword, signOut, claim, save, get user() { return user; }, get ready() { return ready; } };
 })();
