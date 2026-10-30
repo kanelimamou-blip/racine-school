@@ -285,8 +285,11 @@ function viewRole(err = "") {
       <button class="btn alt role" data-r="surveillant">🛡️ Surveillant<span class="small">Avec la clé d'entrée des surveillants</span></button>
       <button class="btn alt role" data-r="personnel">🗂️ Personnel<span class="small">Secrétariat, caisse, intendance</span></button>
       <button class="btn alt role" data-r="directeur">🏫 Direction<span class="small">Avec la clé d'entrée de la direction</span></button>
-    </div><button class="btn alt" id="preins">📝 Pré-inscrire un enfant (nouvel élève)</button>${err ? `<p class="msg-ko small">${esc(err)}</p>` : ""}`;
+    </div><button class="btn alt" id="preins">📝 Pré-inscrire un enfant (nouvel élève)</button>${err ? `<p class="msg-ko small">${esc(err)}</p>` : ""}
+    ${Compte.user ? `<p class="small muted" style="text-align:center">Connecté avec ${esc(Compte.user.email || Compte.user.displayName || "Google")} · <button class="linkbtn small" id="role-out">Se déconnecter</button></p>` : ""}`;
   document.getElementById("preins").onclick = () => viewPreinscription();
+  const out = document.getElementById("role-out");
+  if (out) out.onclick = () => Compte.signOut().then(() => { localStorage.removeItem("racine"); location.reload(); });
   $view.querySelectorAll(".role").forEach((b) => b.onclick = () => {
     if (b.dataset.r === "eleve") { S.role = "eleve"; store.save(); return go("inscription"); }
     if (b.dataset.r === "parent") { S.role = "parent"; store.save(); return go("ecole"); }
