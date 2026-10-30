@@ -5,9 +5,11 @@ const LETTERS = "ABCD";
 const QUIZ_LEN = 20, EXAM_LEN = 30, EXAM_MIN = 30;
 let DATA = null, CFG = null, timer = null;
 
+// pendant une vue de l'admin (sessionStorage « racine-voir »), l'état de ce téléphone n'est ni lu ni écrasé
+const enVue = () => { try { return !!sessionStorage.getItem("racine-voir"); } catch { return false; } };
 const store = {
-  load() { try { return JSON.parse(localStorage.getItem("racine") || "{}"); } catch { return {}; } },
-  save() { try { localStorage.setItem("racine", JSON.stringify(S)); } catch {} Compte.save(S); },
+  load() { try { return enVue() ? {} : JSON.parse(localStorage.getItem("racine") || "{}"); } catch { return {}; } },
+  save() { try { if (!enVue()) localStorage.setItem("racine", JSON.stringify(S)); } catch {} Compte.save(S); },
 };
 const S = Object.assign({ level: null, premium: false, stats: {}, sessions: [], days: [] }, store.load());
 
@@ -709,15 +711,18 @@ function applyProfile(p) {
   // emploi du temps et devoirs : retrouvés en se connectant sur un autre téléphone
   if (!Object.keys(S.edt || {}).length && d.edt) S.edt = d.edt;
   if (!(S.todo || []).length && d.todo) S.todo = d.todo;
-  try { localStorage.setItem("racine", JSON.stringify(S)); } catch {}
+  try { if (!enVue()) localStorage.setItem("racine", JSON.stringify(S)); } catch {}
 }
 
 function render() {
   clearInterval(timer);
   // hors connexion (Firebase injoignable), l'appli reste utilisable en local
   if (Compte.enabled && Compte.ready && !Compte.user) return viewLogin();
-  // compte du propriétaire de l'appli : son espace de supervision ; compte suspendu : plus d'accès
-  if (Compte.user && Compte.proprio) return viewProprio();
+  // admin : son espace (sauf pendant une vue d'un compte ou une présentation) ; #admin sans droits : l'UID à envoyer ;
+  // compte suspendu : plus d'accès
+  barreVue();
+  if (Compte.user && Compte.proprio && !Compte.voir) return viewProprio();
+  if (Compte.user && !Compte.proprio && location.hash.startsWith("#admin")) return viewPasAdmin();
   if (Compte.user && Compte.suspendu) return viewSuspendu();
   const [tab, ...rest] = (location.hash.slice(1) || (isStaff() ? "ecole" : "accueil")).split("/"), arg = rest.length ? rest.join("/") : undefined;
   document.getElementById("exam-tag").textContent = S.level || "";
@@ -745,5 +750,6 @@ document.getElementById("install").onclick = () => { if (deferred) { deferred.pr
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
 Promise.all([fetch("data/questions.json", { cache: "no-cache" }).then((r) => r.json()), fetch("data/config.json", { cache: "no-cache" }).then((r) => r.json())])
-  .then(async ([d, c]) => { DATA = d; CFG = c; applyProfile(await Compte.start().catch(() => null)); await ecoleStart().catch(() => {}); Compte.activite({ role: S.role, nom: S.fiche ? nomComplet(S.fiche) : S.staffNom }); render(); })
+  .then(async ([d, c]) => { DATA = d; CFG = c; applyProfile(await Compte.start().catch(() => null)); await preparerVue().catch(() => {}); await ecoleStart().catch(() => {});
+    if (Compte.voir && !S.role && Compte.voir.role) S.role = Compte.voir.role; Compte.activite({ role: S.role, nom: S.fiche ? nomComplet(S.fiche) : S.staffNom }); render(); })
   .catch(() => { $view.innerHTML = `<div class="card"><p>Impossible de charger les questions. Vérifie ta connexion puis recharge la page.</p></div>`; });

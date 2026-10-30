@@ -1,66 +1,90 @@
 "use strict";
-// Espace propriétaire : réservé au compte du vendeur de l'appli (voir PROPRIO_HASH dans compte.js et proprio() dans les règles).
-// Comptes clients, chiffres d'utilisation, journal des erreurs, suspension d'un compte à la main. L'école n'en voit rien.
+// Espace admin (#admin) : réservé aux comptes de CONFIG_APP.admins et au vendeur de l'appli (voir compte.js et admin() dans les règles).
+// Comptes de l'école avec leur activité, chiffres, journal des erreurs, suspension, WhatsApp, « Voir » un compte en lecture seule
+// et barre de rôles pour les présentations. L'école n'en voit rien.
 
-const PROPRIO = { onglet: "comptes", filtre: "", comptes: null, erreurs: null };
+const PROPRIO = { onglet: "comptes", filtre: "", etat: "", comptes: null, erreurs: null, fiches: {}, annuaire: {}, liens: [] };
 const prDate = (t) => (t && t.toDate ? t.toDate() : null);
 const prJour = (d) => (d ? d.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "—");
 const prHeure = (d) => (d ? d.toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—");
 const prDepuis = (d, jours) => !!d && Date.now() - d.getTime() < jours * 864e5;
-const prAujourdhui = (d) => !!d && d.toDateString() === new Date().toDateString();
+const ETATS = { actif: "Actif", nouveau: "Nouveau", inactif: "Inactif", suspendu: "Suspendu" };
+const etatDe = (c) => (c.suspendu === true ? "suspendu" : prDepuis(c.cree, 7) ? "nouveau" : prDepuis(c.vu, 7) ? "actif" : "inactif");
+// jours d'ouverture de l'appli sur les 7 derniers jours (jours notés par compte.js, sinon jours de révision)
+function jours7(c) {
+  const sem = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toISOString().slice(0, 10); });
+  const j = new Set([...(c.jours || []), ...((c.data || {}).days || [])]);
+  return sem.filter((d) => j.has(d)).length;
+}
+// téléphone et quartier : fiche d'inscription de l'élève, annuaire de l'équipe, ou fiche de l'enfant pour un parent
+function coordonnees(c) {
+  const f = PROPRIO.fiches[c.uid], a = PROPRIO.annuaire[c.uid];
+  if (f) return { tel: f.whatsapp || f.tel || f.telParent, quartier: f.quartier || f.adresse || "", info: [f.classe, f.parent && `parent : ${f.parent}`].filter(Boolean).join(" · ") };
+  if (a) return { tel: a.tel, quartier: "", info: a.nom || "" };
+  const enfant = PROPRIO.liens.find((l) => l.parent === c.uid), fe = enfant && PROPRIO.fiches[enfant.enfant];
+  if (fe) return { tel: fe.telParent, quartier: fe.quartier || fe.adresse || "", info: `parent de ${nomComplet(fe)}` };
+  return { tel: "", quartier: "", info: "" };
+}
 
 async function viewProprio(recharger = false) {
   document.querySelector(".tabs").hidden = true;
   if (recharger || !PROPRIO.comptes) {
-    $view.innerHTML = `<h1>Espace propriétaire</h1><p class="muted">Chargement…</p>`;
+    $view.innerHTML = `<h1>Espace admin</h1><p class="muted">Chargement…</p>`;
     try {
-      const [c, e] = await Promise.all([Compte.comptes(), Compte.erreurs()]);
+      const [c, e, el, an, li] = await Promise.all([Compte.comptes(), Compte.erreurs(), Compte.lister("eleves").catch(() => []), Compte.lister("annuaire").catch(() => []), Compte.lister("liens").catch(() => [])]);
       PROPRIO.comptes = c.filter((x) => x.uid !== Compte.user.uid); PROPRIO.erreurs = e;
+      PROPRIO.fiches = Object.fromEntries(el.map((x) => [x.id, x])); PROPRIO.annuaire = Object.fromEntries(an.map((x) => [x.id, x])); PROPRIO.liens = li;
     } catch (err) {
-      $view.innerHTML = `<h1>Espace propriétaire</h1><div class="card"><p class="msg-ko">Lecture refusée (${esc(err.code || err.message || "erreur")}). Les règles Firestore de cette version n'ont sans doute pas encore été publiées dans la console Firebase.</p><button class="btn" id="pr-re">Réessayer</button></div>`;
+      $view.innerHTML = `<h1>Espace admin</h1><div class="card"><p class="msg-ko">Lecture refusée (${esc(err.code || err.message || "erreur")}). Les règles Firestore de cette version n'ont sans doute pas encore été publiées dans la console Firebase.</p><button class="btn" id="pr-re">Réessayer</button></div>`;
       document.getElementById("pr-re").onclick = () => viewProprio(true);
       return;
     }
   }
-  const comptes = PROPRIO.comptes.map((c) => ({ ...c, cree: prDate(c.created), vu: prDate(c.vu) || prDate(c.created) }));
+  // nom et rôle : ceux notés par l'appli, sinon ceux de la fiche d'élève, de l'annuaire ou du lien parent
+  const nomRole = (c) => { const f = PROPRIO.fiches[c.uid], an = PROPRIO.annuaire[c.uid];
+    return { nom: c.nom || (f && nomComplet(f)) || (an && an.nom) || c.name || "", role: c.role || (f ? "eleve" : an ? an.role : PROPRIO.liens.some((l) => l.parent === c.uid) ? "parent" : "") }; };
+  const comptes = PROPRIO.comptes.map((c) => { const x = { ...c, ...nomRole(c), cree: prDate(c.created), vu: prDate(c.vu) || prDate(c.created) }; return { ...x, etat: etatDe(x), j7: jours7(c), co: coordonnees(c) }; });
   const erreurs = PROPRIO.erreurs.map((e) => ({ ...e, quand: prDate(e.at) }));
-  const susp = comptes.filter((c) => c.suspendu === true).length;
+  const nb = (etat) => comptes.filter((c) => c.etat === etat).length;
   const chiffre = (n, label) => `<div class="card" style="gap:2px"><p class="count">${n}</p><p class="small muted">${label}</p></div>`;
-  const parRole = Object.entries(comptes.reduce((o, c) => ((o[c.role || "?"] = (o[c.role || "?"] || 0) + 1), o), {}))
-    .map(([r, n]) => `${esc(r === "?" ? "Profil non choisi" : ROLES[r] || r)} : <b>${n}</b>`).join(" · ");
   const f = PROPRIO.filtre.toLowerCase();
-  const liste = comptes.filter((c) => !f || `${c.nom || c.name || ""} ${c.email || ""} ${c.role || ""}`.toLowerCase().includes(f))
+  const liste = comptes.filter((c) => (!PROPRIO.etat || c.etat === PROPRIO.etat)
+      && (!f || `${c.nom || c.name || ""} ${c.email || ""} ${ROLES[c.role] || ""} ${c.co.tel || ""} ${c.co.quartier} ${c.co.info}`.toLowerCase().includes(f)))
     .sort((a, b) => (b.vu ? b.vu.getTime() : 0) - (a.vu ? a.vu.getTime() : 0));
   const onglet = (id, label) => `<button class="btn${PROPRIO.onglet === id ? "" : " alt"}" style="flex:1" data-onglet="${id}">${label}</button>`;
+  const filtre = (id, label) => `<button class="btn small${PROPRIO.etat === id ? "" : " alt"}" data-etat="${id}">${label}</button>`;
 
-  $view.innerHTML = `<div class="row"><h1>Espace propriétaire</h1><button class="btn alt small" id="pr-re">↻</button></div>
-    <p class="small muted">Visible seulement par ${esc(Compte.user.email)}. Les comptes de l'école ne voient rien de cet espace.</p>
+  $view.innerHTML = `<div class="row"><h1>Espace admin</h1><button class="btn alt small" id="pr-re" aria-label="Actualiser">↻</button></div>
+    <p class="small muted">Visible seulement par toi. Les comptes de l'école ne voient rien de cet espace.</p>
     <div class="grid">
-      ${chiffre(comptes.length, "comptes inscrits")}
-      ${chiffre(comptes.length - susp, "comptes actifs")}
-      ${chiffre(susp, "comptes suspendus")}
-      ${chiffre(comptes.filter((c) => prAujourdhui(c.vu)).length, "actifs aujourd'hui")}
-      ${chiffre(comptes.filter((c) => prDepuis(c.vu, 7)).length, "actifs sur 7 jours")}
-      ${chiffre(comptes.filter((c) => prDepuis(c.vu, 30)).length, "actifs sur 30 jours")}
-      ${chiffre(comptes.filter((c) => prDepuis(c.cree, 7)).length, "inscrits cette semaine")}
-      ${chiffre(comptes.filter((c) => prDepuis(c.cree, 30)).length, "inscrits ce mois-ci")}
-      ${chiffre(erreurs.filter((e) => prDepuis(e.quand, 1)).length, "erreurs sur 24 h")}
+      ${chiffre(comptes.length, "inscrits")}
+      ${chiffre(comptes.filter((c) => prDepuis(c.vu, 7) && c.etat !== "suspendu").length, "actifs cette semaine")}
+      ${chiffre(nb("inactif"), "inactifs (plus de 7 jours)")}
+      ${chiffre(erreurs.filter((e) => prDepuis(e.quand, 7)).length, "erreurs sur 7 jours")}
     </div>
-    ${parRole ? `<p class="small">${parRole}</p>` : ""}
+    <button class="btn alt" id="pr-demo">🎬 Mode présentation (passer d'un rôle à l'autre)</button>
     <div class="row">${onglet("comptes", `Comptes (${comptes.length})`)}${onglet("erreurs", `Erreurs (${erreurs.length})`)}</div>
     <div id="pr-corps"></div>
     <button class="btn alt" id="pr-out">Se déconnecter</button>`;
 
   const corps = document.getElementById("pr-corps");
   if (PROPRIO.onglet === "comptes") {
-    corps.innerHTML = `<input class="field" id="pr-f" placeholder="Chercher un nom, un e-mail, un profil" value="${esc(PROPRIO.filtre)}">
-      ${liste.length ? liste.map((c) => `<div class="card"><div class="row"><b>${esc(c.nom || c.name || "Sans nom")}</b><span class="small ${c.suspendu ? "msg-ko" : "msg-ok"}">${c.suspendu ? "Suspendu" : "Actif"}</span></div>
-        <p class="small muted">${esc(c.email || "e-mail inconnu")}${c.role ? ` · ${esc(ROLES[c.role] || c.role)}` : ""}</p>
-        <p class="small">Inscrit le ${prJour(c.cree)} · dernière activité ${prHeure(c.vu)}${prDepuis(c.vu, 30) ? "" : " (inactif depuis plus de 30 jours)"}</p>
-        <button class="btn${c.suspendu ? "" : " alt"} small" data-uid="${esc(c.uid)}" data-susp="${c.suspendu ? "" : "1"}">${c.suspendu ? "Réactiver ce compte" : "Suspendre ce compte"}</button></div>`).join("")
+    corps.innerHTML = `<input class="field" id="pr-f" placeholder="Chercher un nom, un e-mail, un téléphone, une classe" value="${esc(PROPRIO.filtre)}">
+      <div class="row" style="flex-wrap:wrap;justify-content:flex-start">${filtre("", `Tous (${comptes.length})`)}${Object.entries(ETATS).map(([k, n]) => filtre(k, `${n} (${nb(k)})`)).join("")}</div>
+      ${liste.length ? liste.map((c) => `<div class="card"><div class="row"><b>${esc(c.nom || c.email || "Sans nom")}</b><span class="small ${c.etat === "suspendu" ? "msg-ko" : c.etat === "inactif" ? "muted" : "msg-ok"}">${ETATS[c.etat]}</span></div>
+        <p class="small muted">${esc(c.role ? ROLES[c.role] || c.role : "Profil non choisi")}${c.co.info ? ` · ${esc(c.co.info)}` : ""}${c.email ? ` · ${esc(c.email)}` : ""}</p>
+        <p class="small">${c.co.tel ? `📞 ${esc(c.co.tel)}` : "Pas de téléphone"}${c.co.quartier ? ` · 📍 ${esc(c.co.quartier)}` : ""}</p>
+        <p class="small">Inscrit le ${prJour(c.cree)} · vu ${prHeure(c.vu)} · <b>${c.j7} jour${c.j7 > 1 ? "s" : ""} d'activité sur 7</b></p>
+        <div class="row">
+          <button class="btn alt small" style="flex:1" data-voir="${esc(c.uid)}">👁️ Voir</button>
+          ${c.co.tel ? `<a class="btn alt small" style="flex:1" target="_blank" rel="noopener" href="https://wa.me/${telLien(c.co.tel)}">WhatsApp</a>` : ""}
+          <button class="btn${c.suspendu ? "" : " alt"} small" style="flex:1" data-uid="${esc(c.uid)}" data-susp="${c.suspendu ? "" : "1"}">${c.suspendu ? "Réactiver" : "Suspendre"}</button>
+        </div></div>`).join("")
         : `<p class="muted">Aucun compte.</p>`}`;
     const champ = document.getElementById("pr-f");
     champ.oninput = () => { PROPRIO.filtre = champ.value; viewProprio().then(() => { const c = document.getElementById("pr-f"); c.focus(); c.setSelectionRange(c.value.length, c.value.length); }); };
+    corps.querySelectorAll("[data-etat]").forEach((b) => b.onclick = () => { PROPRIO.etat = b.dataset.etat; viewProprio(); });
+    corps.querySelectorAll("[data-voir]").forEach((b) => b.onclick = () => Compte.voirCompte({ uid: b.dataset.voir, nom: (comptes.find((c) => c.uid === b.dataset.voir) || {}).nom || "" }));
     corps.querySelectorAll("[data-uid]").forEach((b) => b.onclick = async () => {
       const oui = !!b.dataset.susp;
       b.disabled = true;
@@ -68,24 +92,66 @@ async function viewProprio(recharger = false) {
       catch (e) { b.disabled = false; b.textContent = `Refusé (${e.code || "erreur"})`; }
     });
   } else {
-    corps.innerHTML = erreurs.length ? `${erreurs.map((e) => `<div class="card"><div class="row"><b>${e.type === "refus" ? "Action refusée" : "Plantage"}</b><span class="small muted">${prHeure(e.quand)}</span></div>
-        <p class="small">${esc(e.compte || e.uid)} · page ${esc(e.page || "")}</p>
-        <p class="small muted" style="word-break:break-word">${esc(e.message)}</p></div>`).join("")}
+    corps.innerHTML = erreurs.length ? `${erreurs.map((e) => `<div class="card"><div class="row"><b>${e.type === "refus" ? "Écriture ou lecture refusée" : "Plantage"}</b><span class="small muted">${prHeure(e.quand)}</span></div>
+        <p class="small">${esc(e.compte || e.uid)}${e.role ? ` (${esc(ROLES[e.role] || e.role)})` : ""} · écran ${esc(e.page || "")}</p>
+        <p class="small muted" style="word-break:break-word">${esc(e.message)}</p>
+        ${e.tel ? `<p class="small muted" style="word-break:break-word">📱 ${esc(e.tel)}</p>` : ""}</div>`).join("")}
       <button class="btn alt" id="pr-vider">Effacer le journal</button>` : `<p class="muted">Aucune erreur enregistrée.</p>`;
     const v = document.getElementById("pr-vider");
     if (v) v.onclick = async () => { v.disabled = true; await Compte.viderErreurs(erreurs.map((e) => e.id)).catch(() => {}); viewProprio(true); };
   }
   $view.querySelectorAll("[data-onglet]").forEach((b) => b.onclick = () => { PROPRIO.onglet = b.dataset.onglet; viewProprio(); });
   document.getElementById("pr-re").onclick = () => viewProprio(true);
-  document.getElementById("pr-out").onclick = async () => { await Compte.signOut(); PROPRIO.comptes = null; render(); };
+  document.getElementById("pr-demo").onclick = () => Compte.voirCompte({ role: "directeur" });
+  document.getElementById("pr-out").onclick = async () => { await Compte.signOut(); PROPRIO.comptes = null; location.hash = ""; render(); };
 }
 
-// Compte suspendu par le propriétaire : l'appli ne s'ouvre plus (les règles Firestore bloquent aussi les données de l'école)
+// #admin ouvert avec un compte qui n'est pas admin : son UID, à envoyer pour être ajouté à config.js et aux règles
+function viewPasAdmin() {
+  document.querySelector(".tabs").hidden = true;
+  const uid = Compte.user.uid;
+  $view.innerHTML = `<h1>Espace admin</h1><div class="card"><p>Ce compte (${esc(Compte.user.email || "")}) n'est pas encore admin.</p>
+    <p class="small muted">Ton identifiant (UID), à envoyer pour être ajouté :</p><p class="code" style="word-break:break-all">${esc(uid)}</p>
+    <button class="btn" id="uid-copie">Copier</button><p class="small" id="uid-msg"></p>
+    <button class="btn alt" id="uid-out">Se déconnecter</button></div>`;
+  document.getElementById("uid-copie").onclick = () => navigator.clipboard.writeText(uid).then(() => { document.getElementById("uid-msg").textContent = "Copié !"; }, () => {});
+  document.getElementById("uid-out").onclick = async () => { await Compte.signOut(); render(); };
+}
+
+// Vue d'un compte ou présentation : préparée avant le démarrage de l'espace école ; rien n'est enregistré (compte.js bloque les écritures)
+async function preparerVue() {
+  const v = Compte.voir;
+  if (!v) return;
+  for (const k of ["role", "staffNom", "fiche", "enfants", "profClasses", "dirReel"]) delete S[k];
+  if (v.uid) return;
+  S.role = v.role;
+  const cfg = await Ecole.config().catch(() => ECOLE_DEFAUT), eleves = await Ecole.eleves().catch(() => []);
+  const c = cfg.classes[0] || { id: "", nom: "", level: "6e" };
+  if (v.role === "eleve") { const f = eleves[0]; S.fiche = f || { apercu: true, prenom: "Élève", nom: "Aperçu", classe: c.nom, classeId: c.id, level: c.level }; S.level = S.fiche.level || c.level; }
+  if (v.role === "parent") S.enfants = eleves.slice(0, 2).map((e) => e.id);
+  if (v.role === "prof") S.profClasses = cfg.classes.map((x) => x.id);
+  S.staffNom = v.role === "eleve" || v.role === "parent" ? "" : ROLES[v.role];
+}
+// bandeau en haut de l'écran pendant une vue : qui on regarde, choix du rôle en présentation, retour à l'espace admin
+function barreVue() {
+  const v = Compte.voir;
+  let bar = document.getElementById("barre-vue");
+  if (!v) { if (bar) bar.remove(); return; }
+  if (!bar) { bar = document.createElement("div"); bar.id = "barre-vue"; bar.className = "row noprint"; bar.style.cssText = "position:sticky;top:0;z-index:20;background:var(--hi);color:var(--hi-ink);padding:8px 12px;gap:8px;font-size:.9rem"; document.body.insertBefore(bar, document.body.firstChild); }
+  bar.innerHTML = v.uid ? `<span>👁️ Vue de <b>${esc(v.nom || v.email || "ce compte")}</b> · lecture seule</span><button class="btn alt small" id="vue-q">Quitter</button>`
+    : `<span>🎬 Présentation</span><select class="field" id="vue-r" style="flex:1;padding:6px">${Object.entries(ROLES).map(([k, n]) => `<option value="${k}"${k === v.role ? " selected" : ""}>${n}</option>`).join("")}</select><button class="btn alt small" id="vue-q">Quitter</button>`;
+  document.getElementById("vue-q").onclick = () => Compte.quitterVue();
+  const sel = document.getElementById("vue-r");
+  if (sel) sel.onchange = () => Compte.voirCompte({ role: sel.value });
+}
+
+// Compte suspendu par l'admin : l'appli ne s'ouvre plus (les règles Firestore refusent aussi toute écriture)
 function viewSuspendu() {
   document.querySelector(".tabs").hidden = true;
   $view.innerHTML = `<div class="card" style="gap:14px"><img src="icons/logo.svg" alt="" style="width:80px;height:80px;margin:0 auto;display:block">
     <h1 style="text-align:center;margin:0">Compte suspendu</h1>
-    <p class="muted" style="text-align:center">Ce compte a été suspendu. Rapproche-toi de la direction de l'école pour le faire réactiver.</p>
+    <p class="muted" style="text-align:center">Ce compte est suspendu. Contacte l'équipe au <a href="tel:${telLien(CONFIG_APP.contact)}">${esc(CONFIG_APP.contact)}</a>.</p>
+    <a class="btn" target="_blank" rel="noopener" href="https://wa.me/${telLien(CONFIG_APP.contact)}">Écrire sur WhatsApp</a>
     <button class="btn alt" id="sus-out">Se déconnecter</button></div>`;
   document.getElementById("sus-out").onclick = async () => { await Compte.signOut(); render(); };
 }

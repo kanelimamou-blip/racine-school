@@ -92,35 +92,48 @@ service cloud.firestore {
       return p.size() == 2 && p[0].size() == 5
         && hashing.sha256('SECRET' + p[0]).toHexString().lower()[0:6] == p[1].lower();
     }
-    // propriétaire de l'appli (le vendeur) : reconnu par le SHA-256 de son e-mail vérifié, comme dans docs/compte.js
-    function proprio() {
-      return request.auth != null && request.auth.token.email_verified == true
-        && hashing.sha256(request.auth.token.email.lower()).toHexString().lower() == 'PROPRIO_HASH';
+    // admin de l'appli (le vendeur) : UID de CONFIG_APP.admins (docs/config.js) ou SHA-256 de son e-mail vérifié, comme dans docs/compte.js
+    function admin() {
+      return request.auth != null && (request.auth.uid in ADMIN_UIDS
+        || (request.auth.token.email_verified == true
+          && hashing.sha256(request.auth.token.email.lower()).toHexString().lower() == 'PROPRIO_HASH'));
+    }
+    // compte connecté et non suspendu par l'admin
+    function actif() {
+      return request.auth != null && !(exists(/databases/$(db)/documents/users/$(request.auth.uid))
+        && get(/databases/$(db)/documents/users/$(request.auth.uid)).data.get('suspendu', false) == true);
+    }
+    // l'admin lit tout (bouton « Voir » un compte, en lecture seule) ; il n'écrit que la suspension et l'effacement des erreurs
+    match /{document=**} {
+      allow read: if admin();
     }
     match /users/{uid} {
-      allow read: if request.auth != null && (request.auth.uid == uid || proprio());
+      allow read: if request.auth != null && (request.auth.uid == uid || admin());
       // création : date fixée par le serveur, sans premium et sans suspension
       allow create: if request.auth != null && request.auth.uid == uid
         && request.resource.data.created == request.time
         && request.resource.data.premium == false
         && request.resource.data.get('suspendu', false) == false;
-      // la date de création et la suspension ne changent pas ; le premium ne s'obtient qu'avec un code réclamé par cet élève
+      // la date de création et la suspension ne changent pas, un compte suspendu n'écrit plus rien ;
+      // le premium ne s'obtient qu'avec un code réclamé par cet élève
       allow update: if request.auth != null && request.auth.uid == uid
+        && resource.data.get('suspendu', false) == false
         && request.resource.data.created == resource.data.created
         && request.resource.data.get('suspendu', false) == resource.data.get('suspendu', false)
         && (request.resource.data.premium == resource.data.premium
           || (request.resource.data.premium == true
             && getAfter(/databases/$(db)/documents/claims/$(request.resource.data.code)).data.uid == uid));
-      // le propriétaire suspend ou réactive un compte, sans toucher au reste
-      allow update: if proprio() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['suspendu'])
+      // l'admin suspend ou réactive un compte, sans toucher au reste
+      allow update: if admin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['suspendu'])
         && request.resource.data.suspendu is bool;
     }
-    // journal des erreurs : chaque compte connecté ajoute les siennes, seul le propriétaire les lit et les efface
+    // journal des erreurs : chaque compte actif ajoute les siennes, seul l'admin les lit et les efface
     match /erreurs/{id} {
-      allow read, delete: if proprio();
+      allow read, delete: if admin();
       allow update: if false;
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasOnly(['uid', 'compte', 'type', 'message', 'page', 'tel', 'at'])
+      allow create: if actif() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid', 'compte', 'type', 'message', 'page', 'role', 'tel', 'at'])
+        && request.resource.data.get('role', '') is string && request.resource.data.get('role', '').size() <= 20
         && request.resource.data.type in ['plantage', 'refus']
         && request.resource.data.message is string && request.resource.data.message.size() <= 500
         && request.resource.data.page is string && request.resource.data.page.size() <= 100
@@ -131,7 +144,7 @@ service cloud.firestore {
     // sessions de groupe : chaque élève connecté écrit seulement sa propre note, le groupe lit le classement
     match /sessions/{code}/scores/{uid} {
       allow read: if request.auth != null && code.size() <= 12;
-      allow create, update: if request.auth != null && request.auth.uid == uid && code.size() <= 12
+      allow create, update: if actif() && request.auth.uid == uid && code.size() <= 12
         && request.resource.data.keys().hasOnly(['name', 'note', 'score', 'total', 'level', 'at'])
         && request.resource.data.name is string && request.resource.data.name.size() <= 30
         && request.resource.data.note is number && request.resource.data.note >= 0 && request.resource.data.note <= 20
@@ -144,15 +157,12 @@ service cloud.firestore {
     // un code ne peut être réclamé qu'une fois (pas de recréation possible)
     match /claims/{code} {
       allow read, update, delete: if false;
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid && validCode(code);
+      allow create: if actif() && request.resource.data.uid == request.auth.uid && validCode(code);
     }
 
     // ---------- Espace école : direction, professeurs, surveillants, personnel, parents
     // un compte suspendu par le propriétaire n'a plus accès aux données de l'école
-    function signedIn() {
-      return request.auth != null && !(exists(/databases/$(db)/documents/users/$(request.auth.uid))
-        && get(/databases/$(db)/documents/users/$(request.auth.uid)).data.get('suspendu', false) == true);
-    }
+    function signedIn() { return actif(); }
     function staffRole() {
       let p = /databases/$(db)/documents/staff/$(request.auth.uid);
       return signedIn() && exists(p) ? get(p).data.role : '';
@@ -373,9 +383,16 @@ def new_codes(n, dest):
     print(f"{n} codes ajoutés dans {dest}")
 
 
+def admin_uids():
+    """Liste des UID admin de docs/config.js, au format des règles : ['uid1', 'uid2']."""
+    txt = (ROOT.parent / "docs" / "config.js").read_text()
+    uids = re.findall(r"[\"']([A-Za-z0-9]{20,40})[\"']", re.search(r"admins:\s*\[(.*?)\]", txt, re.S).group(1))
+    return "[" + ", ".join(f"'{u}'" for u in uids) + "]"
+
+
 def rules_texte(sec):
     """Règles à coller dans la console : sans commentaires ni lignes vides, en ASCII (le copier-coller depuis un téléphone abîme les accents)."""
-    lignes = [l for l in RULES.replace("SECRET", sec).replace("PROPRIO_HASH", PROPRIO_HASH).splitlines() if l.strip() and not l.strip().startswith("//")]
+    lignes = [l for l in RULES.replace("SECRET", sec).replace("PROPRIO_HASH", PROPRIO_HASH).replace("ADMIN_UIDS", admin_uids()).splitlines() if l.strip() and not l.strip().startswith("//")]
     return "\n".join(lignes) + "\n"
 
 
