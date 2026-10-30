@@ -674,7 +674,7 @@ async function share() {
 function go(h) { location.hash = h; }
 function viewLogin(err = "", ok = "") {
   $view.innerHTML = `<div class="card" style="gap:14px">
-    <h1 style="text-align:center">Bienvenue sur Racine School</h1>
+    <img src="icons/logo.svg" alt="" style="width:96px;height:96px;margin:0 auto;display:block"><h1 style="text-align:center;margin:0">Bienvenue sur Racine School</h1><p style="text-align:center;margin:0;font-style:italic">L'Excellence et la Réussite</p>
     <p class="muted" style="text-align:center">Connecte-toi pour garder tes progrès et profiter de ${TRIAL_DAYS} jours d'essai gratuit avec tout débloqué.</p>
     <button class="btn" id="google">Se connecter avec Google</button>
     <p class="small muted" style="text-align:center">ou avec ton adresse e-mail</p>
