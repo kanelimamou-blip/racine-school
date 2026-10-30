@@ -187,3 +187,13 @@ button.subj.tile{font:inherit;color:inherit;text-align:left;cursor:pointer}
 .interro-q{padding:6px 0;border-bottom:1px dashed var(--line)}
 @media print{.saut{page-break-before:always}}
 .voir{gap:8px;margin:4px 0 8px}.voir .field{margin:0;max-width:200px;padding:6px 8px}
+
+/* Mieux apprendre : plan, carte mentale, chrono du jour J */
+.plan-row{padding:10px 0;border-bottom:1px solid var(--line)}.plan-row:last-child{border-bottom:0}.plan-row.done b{text-decoration:line-through;color:var(--muted)}
+.mm{display:flex;flex-direction:column;align-items:center;gap:14px;margin:8px 0 16px}
+.mm-c{background:var(--accent);color:var(--accent-ink);font-family:var(--f-display);font-weight:800;font-size:1.15rem;padding:14px 20px;border-radius:999px;text-align:center;max-width:100%}
+.mm-b{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;width:100%;position:relative}
+.mm-n{display:flex;flex-direction:column;gap:4px;background:var(--surface);border:1px solid var(--line);border-left:6px solid hsl(var(--h) 65% 50%);border-radius:14px;padding:12px 14px;text-decoration:none;color:inherit}
+.mm-n ul{margin:4px 0 0;padding-left:18px}.mm-n li{margin:3px 0}
+#jj-bar{position:fixed;left:8px;right:8px;bottom:calc(var(--tabs-h) + env(safe-area-inset-bottom,0px) + 8px);z-index:40;display:flex;gap:8px;align-items:center;justify-content:space-between;background:var(--ink);color:var(--bg);padding:10px 12px;border-radius:14px;font-size:.9rem;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+#jj-bar .btn-ghost{color:var(--bg);border-color:var(--bg)}#jj-bar.over{background:var(--ko);color:#fff}

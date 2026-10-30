@@ -96,6 +96,8 @@ async function vueDocuments(ctx) {
       <label class="small">Catégorie<select class="field" id="dcat">${["Support de cours", "Exercices", "Règlement et circulaires", "Liste de fournitures", "Ressource pour les professeurs", "Autre"].map((x) => `<option>${x}</option>`).join("")}</select></label>
       <label class="small">Pour<select class="field" id="dcib">${S.role === "directeur" ? Object.entries(CIBLES).map(([k, n]) => `<option value="${k}">${n}</option>`).join("") : `<option value="profs">Les autres professeurs</option>`}
         <optgroup label="Une classe">${classes.map((c) => `<option value="${esc(c.id)}">${esc(c.nom)}</option>`).join("")}</optgroup></select></label>
+      <label class="small">Chapitre du programme (facultatif : le support s'affiche en premier dans ce chapitre)<select class="field" id="dsid"><option value="">Aucune matière</option>${DATA.subjects.filter((x) => !/annales/.test(x.id) && (DATA.programmes || {})[x.id]).map((x) => `<option value="${x.id}">${esc(x.name)} · ${esc(x.levels.join(", "))}</option>`).join("")}</select>
+        <select class="field" id="dpch" hidden></select></label>
       <label class="btn alt small">📎 Choisir un fichier (photo ou PDF, 700 Ko au plus)<input type="file" id="dfic" accept="image/*,application/pdf" hidden></label><span id="dficmsg" class="small muted"></span>
       <input class="field" id="dlien" placeholder="ou un lien (Google Drive, YouTube…)" maxlength="300">
       <button class="btn" id="dpub">Publier</button><p id="dmsg" class="small"></p></details>` : ""}
@@ -111,12 +113,14 @@ function lierDocuments() {
     else { fichier = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(x); }); type = x.type; }
     nom = x.name; info.textContent = ` ${x.name} ✓`;
   };
+  const ds = document.getElementById("dsid"), dp = document.getElementById("dpch");
+  if (ds) ds.onchange = () => { const prog = (DATA.programmes || {})[ds.value] || []; dp.hidden = !prog.length; dp.innerHTML = `<option value="">Toute la matière</option>${prog.map((t, i) => `<option value="${i}">${i + 1}. ${esc(t)}</option>`).join("")}`; };
   const pub = document.getElementById("dpub");
   if (pub) pub.onclick = async () => {
     const v = (id) => document.getElementById(id).value.trim(), msg = document.getElementById("dmsg");
     if (!v("dtitre") || (!fichier && !v("dlien"))) { msg.className = "msg-ko small"; msg.textContent = "Donne un titre et un fichier ou un lien."; return; }
     pub.disabled = true;
-    await Ecole.ecrire("documents", null, { titre: v("dtitre"), categorie: v("dcat"), cible: v("dcib"), fichier, nomFichier: nom, type, lien: v("dlien"), par: Ecole.myId(), parNom: S.staffNom || "", le: today() })
+    await Ecole.ecrire("documents", null, { titre: v("dtitre"), categorie: v("dcat"), cible: v("dcib"), fichier, nomFichier: nom, type, lien: v("dlien"), ...(v("dsid") ? { sid: v("dsid"), pch: v("dpch") === "" ? -1 : +v("dpch") } : {}), par: Ecole.myId(), parNom: S.staffNom || "", le: today() })
       .then(() => viewEcole()).catch(() => { pub.disabled = false; msg.className = "msg-ko small"; msg.textContent = "L'envoi n'a pas abouti."; });
   };
   $view.querySelectorAll(".docrm").forEach((b) => b.onclick = async () => { await Ecole.effacer("documents", b.dataset.id).catch(() => {}); S.role === "eleve" ? viewMesDocuments() : viewEcole(); });

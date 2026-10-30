@@ -1,3 +1,4 @@
+# RÉFÉRENCES (non publiées dans l'appli depuis le 2026-10-30) : sujets officiels dont s'inspire le contenu maison.
 # Devoirs, compositions et séries d'exercices des classes sans examen national (6e, 5e, 4e, 2nde, 1ère).
 # Ce sont des sujets d'établissements ou d'inspections (non officiels au sens de l'Office du BAC), hébergés par epreuvesetcorriges.com.
 
