@@ -1,4 +1,4 @@
-"""Construit les données de l'appli Révision BAC et BFEM (docs/revision/data/).
+"""Construit les données de l'appli Racine School (docs/data/).
 
 python contenu/build.py               -> questions.json et config.json
 python contenu/build.py --codes 200   -> ajoute 200 codes premium ; la liste en clair
@@ -38,7 +38,7 @@ from questions import CLASSES, FAMILIES, FREE, LEVELS, SERIES, SUBJECTS
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT.parent / "docs" / "data"
 HASHES = ROOT / "code_hashes.txt"
-SALT = "rev-bac-bfem:"
+SALT = "racine-school:"
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # sans 0/O ni 1/I
 
 # Réglages de vente (à remplir par Est : numéro Wave et WhatsApp au format 221XXXXXXXXX)
@@ -98,7 +98,7 @@ service cloud.firestore {
   }
 }
 """
-PRIVATE = Path("/mnt/project-files/revision")
+PRIVATE = Path("/mnt/project-files/racine-school/prive")
 SECRET_FILE = PRIVATE / "secret-codes.txt"
 
 
@@ -210,7 +210,7 @@ def build():
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--codes", type=int, default=0)
-    p.add_argument("--dest", default="/mnt/project-files/revision/codes-premium.txt")
+    p.add_argument("--dest", default="/mnt/project-files/racine-school/prive/codes-premium.txt")
     args = p.parse_args()
     if args.codes:
         new_codes(args.codes, args.dest)
