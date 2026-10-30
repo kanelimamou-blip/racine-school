@@ -234,7 +234,7 @@ async function vueParent(ctx) {
   const e = tous[ids.indexOf(id)];
   if (!e) return `<div class="card"><p>La fiche de cet enfant est introuvable.</p></div>${ajout}`;
   const f = rattacher(ctx.cfg, [e.fiche])[0], r = retard(ctx.cfg, f, e.pay), st = f.stats || {};
-  const [devoirs, seances] = await Promise.all([Ecole.devoirs(f.cid).catch(() => []), Ecole.liste("seances", "cid", f.cid).catch(() => [])]);
+  const [devoirs, seances, notesEnf] = await Promise.all([Ecole.devoirs(f.cid).catch(() => []), Ecole.liste("seances", "cid", f.cid).catch(() => []), Ecole.releve(id, f.cid).catch(() => [])]);
   const avenir = devoirs.filter((d) => d.date >= today()).slice(0, 5);
   const vus = seances.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
   return `${ids.length > 1 ? `<div class="row onglets">${tous.map((x, i) => x ? `<button class="btn alt small enf${ids[i] === id ? " on" : ""}" data-id="${esc(ids[i])}">${esc(x.fiche.prenom)}</button>` : "").join("")}</div>` : ""}
@@ -242,6 +242,9 @@ async function vueParent(ctx) {
     <div class="card"><div class="row"><h2>Scolarité ${esc(ctx.cfg.annee)}</h2>${badgePay(r)}</div>
       ${moisEchus(ctx.cfg).map((m) => { const p = e.pay[m]; return `<div class="row small mois"><span>${moisNom(m)} · ${fcfa(montantDu(ctx.cfg, f, m))}</span>${p ? (p.recu ? `<a href="#ecole/recu/${encodeURIComponent(id)}/${m}">✓ Payé · reçu</a>` : `<span class="ok-txt">✓ Payé</span>`) : `<span class="ko-txt">À régler</span>`}</div>`; }).join("")}
       ${r.mois.length ? `<p class="small">Reste à régler : <b class="ko-txt">${fcfa(r.montant)}</b>, à la caisse de l'école.</p>` : ""}</div>
+    ${(() => { const b = moyennesEleve(ctx.cfg, notesEnf.filter((x) => x.trimestre === "1"), id); return `<div class="card"><div class="row"><h2>Notes du 1er trimestre</h2><b class="count">${n2(b.gen)}</b></div>
+      ${b.mats.map((m) => `<div class="row small"><span>${esc(m.matiere)}</span><b>${n2(m.moy)}</b></div>`).join("") || `<p class="small muted">Pas encore de notes.</p>`}
+      <a class="btn alt small" href="#ecole/bulletin/${encodeURIComponent(id)}/1">📑 Voir le bulletin</a></div>`; })()}
     <div class="card"><h2>Révisions dans l'appli</h2>
       <div class="row"><div><p class="small muted">Réponses</p><p class="count">${st.rep || 0}</p></div><div><p class="small muted">Réussite</p><p class="count">${reussite(f) ?? 0} %</p></div><div><p class="small muted">Jours actifs (7 j)</p><p class="count">${st.jours7 || 0}</p></div></div>
       <p class="small muted">Dernière révision : ${st.derniere ? dateFr(st.derniere) : "jamais"}${st.moy !== null && st.moy !== undefined ? ` · moyenne aux quiz : ${String(st.moy).replace(".", ",")} / 20` : ""}</p>

@@ -174,6 +174,16 @@ service cloud.firestore {
     match /portail/{jour} {
       allow read, write: if isEquipe();
     }
+    // notes : une évaluation par document (équipe), et le relevé de chaque élève (lui, ses parents, l'équipe)
+    match /notes/{id} {
+      allow read: if isEquipe();
+      allow create: if isStaff() && request.resource.data.par == request.auth.uid;
+      allow update, delete: if isDir() || (isStaff() && resource.data.par == request.auth.uid);
+    }
+    match /releves/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isEquipe() || isParentDe(uid));
+      allow write: if isStaff();
+    }
     // annonces et calendrier de l'école : publiés par la direction, lus par tous
     match /annonces/{id} {
       allow read: if signedIn();

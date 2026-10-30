@@ -164,3 +164,7 @@ textarea.field{width:100%;padding:10px;border-radius:10px;border:1px solid var(-
   header.top,nav.tabs,.noprint,.demo{display:none!important}
   body{background:#fff;color:#000}.card.doc{box-shadow:none;border:0}
 }
+.note-l{align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid var(--line)}.note-l .field{max-width:84px;margin:0;text-align:center}
+.tab-notes{width:100%;border-collapse:collapse;font-size:.85rem}.tab-notes th,.tab-notes td{border-bottom:1px solid var(--line);padding:5px 4px;text-align:left}
+.tab-notes th{font-size:.75rem;color:var(--muted, #667)}
+details.card summary{cursor:pointer}

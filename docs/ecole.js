@@ -151,6 +151,31 @@ const Ecole = (() => {
     if (shared()) await db().collection(col).doc(id).delete();
     else { const c = { ...((L.col || {})[col] || {}) }; delete c[id]; L.col = { ...(L.col || {}), [col]: c }; keep(); }
   }
+  // Notes : une évaluation par document ; en ligne, chaque élève a aussi son relevé (lu par lui et ses parents, sans les notes des autres)
+  async function sauverEvaluation(id, ev, eleveIds) {
+    id = await ecrire("notes", id, ev);
+    if (shared()) {
+      const b = db().batch(), FV = firebase.firestore.FieldValue;
+      for (const eid of eleveIds) {
+        const n = ev.notes ? ev.notes[eid] : null;
+        b.set(db().collection("releves").doc(eid), { evals: { [id]: n === undefined || n === null ? FV.delete()
+          : { sid: ev.sid, matiere: ev.matiere, titre: ev.titre, type: ev.type, trimestre: ev.trimestre, coef: ev.coef, sur: ev.sur, date: ev.date, note: n } } }, { merge: true });
+      }
+      await b.commit();
+    }
+    return id;
+  }
+  async function supprimerEvaluation(id, eleveIds) {
+    await sauverEvaluation(id, { notes: {} }, eleveIds).catch(() => {});
+    await effacer("notes", id);
+  }
+  async function releve(eid, cid) {
+    if (shared()) {
+      const d = (await db().collection("releves").doc(eid).get().catch(() => null))?.data();
+      return Object.entries((d && d.evals) || {}).map(([id, e]) => ({ ...e, id, cid, notes: { [eid]: e.note } }));
+    }
+    return Object.values((L.col || {}).notes || {}).filter((e) => e.cid === cid && e.notes && e.notes[eid] !== undefined && e.notes[eid] !== null);
+  }
   // Parents : le code de l'enfant (sur sa carte d'élève) relie le téléphone du parent à sa fiche
   async function lierEnfant(code) {
     code = code.trim().toUpperCase().replace(/\s/g, "");
@@ -250,11 +275,20 @@ const Ecole = (() => {
       const m = moisEchus(cfg).filter((x) => !pay[id][x]).pop() || ceMois();
       pay[id][m] = { le: today(), recu: numeroRecu(), montant: montantDu(cfg, eleves[id], m), par: "M. Lamine Kane" };
     });
+    // notes du premier trimestre : un devoir et une composition dans trois matières par classe
+    cfg.classes.forEach((c, ci) => {
+      const l = parCl(c.id);
+      subjectsOf(c.level).filter((x) => !/annales/.test(x.id)).slice(0, 4).forEach((m, mi) => [["Devoir 1", "Devoir surveillé", 1, -40], ["Composition", "Composition", 2, -18]].forEach(([titre, type, coef, j], ti) => {
+        const notes = Object.fromEntries(l.map((id) => { const st = eleves[id].stats, base = st.rep ? (20 * st.ok) / st.rep : 10;
+          return [id, Math.max(0, Math.min(20, Math.round((base - 3 + rnd() * 6) * 4) / 4))]; }));
+        mettre("notes", `demo-n${ci}-${mi}-${ti}`, { cid: c.id, classe: c.nom, sid: m.id, matiere: m.name, titre, type, trimestre: "1", coef, sur: 20, date: t(j), notes, par: "demo", parNom: "Équipe pédagogique" });
+      }));
+    });
     L.col = col;
     L.paiements = pay; L.demo = true; keep();
   }
   return { config, setConfig, saveFiche, maFiche, eleves, paiements, payer, devoirs, addDevoir, delDevoir, claimRole, retirerAcces, monRole, setClasses, syncStats, demo,
-    liste, lire, ecrire, effacer, lierEnfant, mesEnfants, enfant, myId,
+    liste, lire, ecrire, effacer, lierEnfant, mesEnfants, enfant, myId, sauverEvaluation, supprimerEvaluation, releve,
     get online() { return online(); }, get isDemo() { return !!L.demo; }, reset() { cfgCache = null; } };
 })();
 
@@ -391,20 +425,20 @@ function ficheCard() {
   if (S.role !== "eleve" || !S.fiche) return "";
   const f = S.fiche;
   return `<div class="card lib-card fiche-card"><a class="row" style="justify-content:flex-start;text-decoration:none;color:inherit" href="#inscription">${avatar(f)}<span class="grow"><b>${esc(nomComplet(f))}</b><br><span class="small muted">${esc(f.classe)} · Racine School</span></span></a>
-    <a class="btn alt small" href="#carte">🪪 Ma carte d'élève</a></div>`;
+    <span class="row" style="gap:6px"><a class="btn alt small" href="#carte">🪪 Ma carte</a><a class="btn alt small" href="#notes">📑 Mes notes</a></span></div>`;
 }
 
 // ---------- Espace école (équipe et parents)
 const ONGLETS = {
-  directeur: [["", "Tableau"], ["eleves", "Élèves"], ["paiements", "Paiements"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["equipe", "Équipe"], ["reglages", "Réglages"]],
-  prof: [["", "Mes classes"], ["appel", "Appel"], ["quiz", "Quiz en classe"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
+  directeur: [["", "Tableau"], ["eleves", "Élèves"], ["paiements", "Paiements"], ["bulletins", "Bulletins"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["equipe", "Équipe"], ["reglages", "Réglages"]],
+  prof: [["", "Mes classes"], ["appel", "Appel"], ["notes", "Notes"], ["quiz", "Quiz en classe"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
   surveillant: [["", "Aujourd'hui"], ["portail", "Portail"], ["eleves", "Élèves"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
   personnel: [["", "Caisse"], ["eleves", "Élèves"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
   parent: [["", "Mon enfant"], ["annonces", "Annonces"]],
 };
 const TITRES = { directeur: "Direction", prof: "Espace professeur", surveillant: "Vie scolaire", personnel: "Administration", parent: "Espace parent" };
 // pages ouvertes depuis une autre (fiche d'un élève, reçu, certificat), selon le profil
-const SOUS_PAGES = { directeur: ["eleve", "recu", "certificat"], prof: ["eleve", "eleves"], surveillant: ["eleve"], personnel: ["eleve", "recu", "certificat", "paiements"], parent: ["recu"] };
+const SOUS_PAGES = { directeur: ["eleve", "recu", "certificat", "notes", "bulletin"], prof: ["eleve", "eleves", "bulletins", "bulletin"], surveillant: ["eleve"], personnel: ["eleve", "recu", "certificat", "paiements"], parent: ["recu", "bulletin"] };
 const ongletsEcole = (actif) => `<div class="row onglets noprint">${(ONGLETS[S.role] || []).map(([k, l]) => `<a class="btn alt small${k === actif ? " on" : ""}" href="#ecole${k ? "/" + k : ""}">${l}</a>`).join("")}</div>`;
 async function viewEcole() {
   const [, sub = "", arg = "", arg2 = ""] = location.hash.slice(1).split("/").map(decodeURIComponent);
@@ -419,13 +453,14 @@ async function viewEcole() {
       equipe && role !== "personnel" ? Ecole.lire("portail", today()).catch(() => null) : null, equipe ? Ecole.liste("annuaire").catch(vide) : []]);
     const ctx = { cfg, eleves: rattacher(cfg, eleves).sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom)), devoirs: rattacher(cfg, devoirs), pay,
       annonces: annonces.sort((a, b) => String(b.le).localeCompare(String(a.le))), appels, portail: (portail && portail.retards) || {}, annuaire };
-    const actif = { eleve: "eleves", recu: role === "parent" ? "" : "paiements", certificat: "eleves" }[sub] ?? sub;
-    const head = `<div class="row noprint"><h1>${titre}</h1><span class="small muted">${esc(S.staffNom || "")}</span></div>
+    const actif = { eleve: "eleves", recu: role === "parent" ? "" : "paiements", certificat: "eleves", bulletin: { parent: "", prof: "notes" }[role] ?? "bulletins", bulletins: role === "prof" ? "notes" : "bulletins", notes: role === "prof" ? "notes" : "bulletins" }[sub] ?? sub;
+    const head = `<div class="row noprint"><h1>${titre}</h1><span class="small muted">${role === "parent" ? "" : esc(S.staffNom || "")}</span></div>
       ${Ecole.isDemo ? `<p class="demo small noprint">Démonstration : élèves et équipe fictifs. ${role === "directeur" ? `<button class="linkbtn" id="demo-off">Effacer la démo</button>` : ""}</p>` : ""}${ongletsEcole(actif)}`;
     const views = {
       "": { directeur: vueEnsemble, prof: vueClassesProf, surveillant: vueAujourdhui, personnel: vueCaisse, parent: vueParent }[role],
       eleves: vueEleves, eleve: vueFiche, paiements: vuePaiements, devoirs: vueDevoirs, reglages: vueReglages,
       annonces: vueAnnonces, equipe: vueEquipe, appel: vueAppel, quiz: vueQuiz, portail: vuePortail, recu: vueRecu, certificat: vueCertificat,
+      notes: vueNotes, bulletins: vueBulletins, bulletin: vueBulletin,
     };
     $view.innerHTML = head + (await views[sub](ctx, arg, arg2));
     const off = document.getElementById("demo-off");
@@ -556,6 +591,8 @@ function vueReglages(ctx) {
       <div class="row"><label class="small" style="flex:1">Premier mois<input class="field" type="month" id="debut" value="${cfg.debut}"></label><label class="small" style="flex:1">Dernier mois<input class="field" type="month" id="fin" value="${cfg.fin}"></label></div>
       <label class="small">Frais d'inscription (FCFA)<input class="field" type="number" id="insc" value="${cfg.inscription}" min="0" step="500"></label></div>
     <div class="card"><h2>Mensualités (FCFA)</h2>${DATA.classes.map((n) => `<label class="row small">${n}<input class="field mens" style="max-width:140px" type="number" data-n="${n}" value="${cfg.mensualites[n] || 0}" min="0" step="500"></label>`).join("")}</div>
+    <div class="card"><h2>Coefficients des matières</h2><p class="small muted">Utilisés pour la moyenne générale des bulletins (1 par défaut).</p>
+      ${[...new Set(DATA.subjects.filter((x) => !/annales/.test(x.id)).map((x) => x.name))].sort((a, b) => a.localeCompare(b, "fr")).map((n) => `<label class="row small">${esc(n)}<input class="field coef" style="max-width:90px" type="number" data-n="${esc(n)}" value="${(cfg.coefs || {})[n] || 1}" min="0.5" max="10" step="0.5"></label>`).join("")}</div>
     <div class="card"><h2>Classes de l'école (${cfg.classes.length})</h2>
       <p class="small muted">Liste indicative : change le nom d'une classe en touchant son nom, choisis le programme suivi, puis enregistre en bas. Les élèves inscrits suivent leur classe renommée.</p>
       ${cfg.classes.map((c, i) => { const n = ctx.eleves.filter((f) => f.cid === c.id).length;
@@ -634,6 +671,7 @@ const bindEcole = {
     const lire = () => {
       $view.querySelectorAll(".classe-edit").forEach((d) => { const c = cfg.classes[+d.dataset.i]; if (c) cfg.classes[+d.dataset.i] = { ...c, nom: d.querySelector(".cn").value.trim() || c.nom, level: d.querySelector(".clv").value }; });
       $view.querySelectorAll(".mens").forEach((i) => { cfg.mensualites[i.dataset.n] = +i.value || 0; });
+      cfg.coefs = { ...(cfg.coefs || {}) }; $view.querySelectorAll(".coef").forEach((i) => { cfg.coefs[i.dataset.n] = +i.value || 1; });
       return { ...cfg, classes: cfg.classes.filter(Boolean), annee: v("annee").trim() || cfg.annee, debut: v("debut") || cfg.debut, fin: v("fin") || cfg.fin, inscription: +v("insc") || 0 };
     };
     document.getElementById("cadd").onclick = async () => {
