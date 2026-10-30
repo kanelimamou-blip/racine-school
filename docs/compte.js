@@ -2,8 +2,14 @@
 // Comptes élèves : connexion Google (Firebase Auth), essai et premium enregistrés en ligne (Firestore).
 // Sans configuration Firebase, l'appli garde le fonctionnement local (Compte.enabled = false).
 // Configuration publique du projet Firebase propre à Racine School (pas secrète : la sécurité vient des règles Firestore).
-// À remplir avec le projet Firebase de l'école ; tant qu'elle vaut null, l'appli marche sans compte.
-const FIREBASE_CONFIG = null;
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAmnY2Pg6JUVsEcbTcVLT6csGKy4jNlYxQ",
+  authDomain: "racine-school-c7395.firebaseapp.com",
+  projectId: "racine-school-c7395",
+  storageBucket: "racine-school-c7395.firebasestorage.app",
+  messagingSenderId: "844843150303",
+  appId: "1:844843150303:web:092035ec1e23816432326a",
+};
 
 const Compte = (() => {
   const SDK = "https://www.gstatic.com/firebasejs/10.12.2/";

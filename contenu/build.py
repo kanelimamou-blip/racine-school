@@ -121,7 +121,7 @@ service cloud.firestore {
     // fiche d'inscription : l'élève écrit la sienne, l'équipe de l'école la lit
     match /eleves/{uid} {
       allow read: if signedIn() && (request.auth.uid == uid || isStaff());
-      allow create, update: if signedIn() && request.auth.uid == uid && request.resource.size() < 400000;
+      allow create, update: if signedIn() && request.auth.uid == uid && request.resource.data.keys().size() < 30;
       allow delete: if isDir();
     }
     // paiements de scolarité : tenus par la direction, l'élève voit les siens

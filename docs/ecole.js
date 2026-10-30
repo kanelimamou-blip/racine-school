@@ -46,6 +46,8 @@ const Ecole = (() => {
   const keep = () => { try { localStorage.setItem(KEY, JSON.stringify(L)); } catch {} };
   const online = () => !!(Compte.enabled && Compte.user && window.firebase);
   const db = () => firebase.firestore();
+  // pendant une démonstration, la direction voit des élèves fictifs gardés sur ce téléphone, jamais envoyés en ligne
+  const shared = () => online() && !L.demo;
   const myId = () => (online() ? Compte.user.uid : (S.idLocal = S.idLocal || "moi-" + Math.random().toString(36).slice(2, 10)));
   let cfgCache = null;
 
@@ -69,21 +71,21 @@ const Ecole = (() => {
     return (L.eleves || {})[myId()] || null;
   }
   async function eleves() {
-    if (online()) return (await db().collection("eleves").get()).docs.map((d) => ({ ...d.data(), id: d.id }));
+    if (shared()) return (await db().collection("eleves").get()).docs.map((d) => ({ ...d.data(), id: d.id }));
     return Object.values(L.eleves || {});
   }
   async function paiements() {
-    if (online()) return Object.fromEntries((await db().collection("paiements").get()).docs.map((d) => [d.id, d.data()]));
+    if (shared()) return Object.fromEntries((await db().collection("paiements").get()).docs.map((d) => [d.id, d.data()]));
     return L.paiements || {};
   }
   async function payer(id, mois, paye) {
     const val = paye ? { le: today() } : null;
-    if (online()) await db().collection("paiements").doc(id).set({ [mois]: val || firebase.firestore.FieldValue.delete() }, { merge: true });
+    if (shared()) await db().collection("paiements").doc(id).set({ [mois]: val || firebase.firestore.FieldValue.delete() }, { merge: true });
     else { const p = { ...(L.paiements || {})[id] }; if (val) p[mois] = val; else delete p[mois]; L.paiements = { ...(L.paiements || {}), [id]: p }; keep(); }
   }
   async function devoirs(classe = null) {
     let list;
-    if (online()) {
+    if (shared()) {
       const q = classe ? db().collection("devoirs").where("classe", "==", classe) : db().collection("devoirs");
       list = (await q.get()).docs.map((d) => ({ ...d.data(), id: d.id }));
     } else list = (L.devoirs || []).filter((d) => !classe || d.classe === classe);
@@ -91,11 +93,11 @@ const Ecole = (() => {
   }
   async function addDevoir(d) {
     d = { ...d, par: myId(), parNom: S.staffNom || "", le: today() };
-    if (online()) await db().collection("devoirs").add(d);
+    if (shared()) await db().collection("devoirs").add(d);
     else { L.devoirs = [...(L.devoirs || []), { ...d, id: "d" + Date.now() }]; keep(); }
   }
   async function delDevoir(id) {
-    if (online()) await db().collection("devoirs").doc(id).delete();
+    if (shared()) await db().collection("devoirs").doc(id).delete();
     else { L.devoirs = (L.devoirs || []).filter((d) => d.id !== id); keep(); }
   }
   // La clé d'entrée est vérifiée ici, puis par les règles Firestore quand l'école est en ligne
@@ -153,7 +155,7 @@ const Ecole = (() => {
     L.paiements = pay; L.demo = true; keep();
   }
   return { config, setConfig, saveFiche, maFiche, eleves, paiements, payer, devoirs, addDevoir, delDevoir, claimRole, monRole, setClasses, syncStats, demo,
-    get online() { return online(); }, get isDemo() { return !!L.demo && !online(); }, reset() { cfgCache = null; } };
+    get online() { return online(); }, get isDemo() { return !!L.demo; }, reset() { cfgCache = null; } };
 })();
 
 // Au démarrage : profil et fiche retrouvés en ligne (nouveau téléphone), devoirs de la classe ajoutés à l'agenda
@@ -318,7 +320,7 @@ function vueEnsemble(ctx) {
   const { cfg, eleves, pay } = ctx;
   if (!eleves.length) return `<div class="card"><h2>Aucun élève inscrit pour l'instant</h2>
     <p class="muted">Les élèves apparaissent ici dès qu'ils remplissent leur fiche d'inscription dans l'appli.</p>
-    ${Ecole.online ? "" : `<button class="btn" id="demo-on">Voir une démonstration avec des élèves fictifs</button>`}</div>`;
+    <button class="btn" id="demo-on">Voir une démonstration avec des élèves fictifs</button></div>`;
   const ret = eleves.map((f) => retard(cfg, f, pay[f.id])), enRetard = ret.filter((r) => r.mois.length);
   const filles = eleves.filter((f) => f.sexe === "F").length, actifs = eleves.filter(actif7).length;
   const avecRep = eleves.filter((f) => reussite(f) !== null);
@@ -432,7 +434,7 @@ function vueClassesProf(ctx) {
     ${mine.map((c) => { const l = eleves.filter((f) => f.classe === c), a = l.filter((f) => reussite(f) !== null);
       return `<div class="card"><div class="row"><h2>${esc(c)}</h2><span class="small muted">${l.length} élève${l.length > 1 ? "s" : ""}${a.length ? ` · ${Math.round(a.reduce((n, f) => n + reussite(f), 0) / a.length)} % réussite` : ""}</span></div>
         ${l.map((f) => ligneEleve(ctx, f)).join("") || `<p class="small muted">Aucun élève inscrit pour l'instant.</p>`}</div>`; }).join("")}
-    ${!ctx.eleves.length && !Ecole.online ? `<button class="btn alt" id="demo-on">Voir une démonstration avec des élèves fictifs</button>` : ""}
+    ${!ctx.eleves.length ? `<button class="btn alt" id="demo-on">Voir une démonstration avec des élèves fictifs</button>` : ""}
     <button class="btn alt" id="quit">Changer de profil sur ce téléphone</button>`;
 }
 
