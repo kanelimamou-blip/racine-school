@@ -1,0 +1,4 @@
+node_modules/
+firestore.test.rules
+captures/
+*.log

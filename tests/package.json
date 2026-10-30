@@ -1,0 +1,14 @@
+{
+  "name": "racine-school-tests",
+  "private": true,
+  "description": "Tests des règles Firestore et de l'espace admin avec les émulateurs Firebase",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore,auth --project racine-school-c7395 \"node regles.test.mjs && node e2e.cjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase": "^12.0.0",
+    "firebase-appli": "npm:firebase@10.12.2",
+    "firebase-tools": "^14.0.0"
+  }
+}

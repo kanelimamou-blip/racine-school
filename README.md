@@ -26,3 +26,9 @@ L'école paie un forfait : tout est ouvert à tous les élèves, sans essai ni c
 ## Programme, chapitre par chapitre
 
 Contenu repris de l'appli Révision et adapté : 58 matières (dont les maths des séries L et G et l'espagnol LV2 de la 4e à la Tle), 376 chapitres du programme officiel, chacun avec son cours (notions), sa synthèse, ses QCM et, en maths, physique-chimie, SVT, économie et comptabilité, ses formules (`contenu/formulaire.py` écrit à la main, complété par les formules des cours dans `contenu/formules.py`). `docs/chapitres.js` : parcours classe → matière → chapitre, avec les supports déposés par les professeurs de l'école en tête (champ « Chapitre du programme » à l'ajout d'un document). Formulaire, fiches flash et autres outils : `docs/vie.js` ; mieux apprendre : `docs/apprendre.js`.
+
+## Espace admin (#admin)
+
+`docs/proprio.js` : réservé aux UID de `docs/config.js` (`admins`) et au compte du vendeur (reconnu par l'empreinte SHA-256 de son e-mail vérifié, l'e-mail n'est pas dans le dépôt). Comptes de l'école (téléphone, quartier, activité sur 7 jours, états Actif / Nouveau / Inactif / Suspendu, recherche et filtres, WhatsApp), chiffres, journal des erreurs (plantages et écritures refusées, 5 par ouverture), suspension, « Voir » un compte en lecture seule et mode présentation (barre de rôles sur les vraies données, sans rien écrire). Un compte qui n'est pas admin voit son UID à copier sur `#admin`. Après un ajout dans `admins`, `python contenu/build.py --regles` réécrit les règles à coller dans la console.
+
+Tests (`tests/`) : `npm install` puis `ADMIN_EMAIL=… npm test` lance les émulateurs Firebase, les tests des règles (`regles.test.mjs`) et le parcours dans l'appli (`e2e.cjs`, Playwright).
