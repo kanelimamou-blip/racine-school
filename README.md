@@ -1,8 +1,8 @@
-# Révision
+# Racine School
 
 Appli de téléphone pour réviser de la 6e à la Terminale au Sénégal (2nde L et S ; 1ère et Tle en L1a, L1b, L2, L', S1 à S5 et G) : quiz corrigés et expliqués, examens et devoirs blancs chronométrés, erreurs à revoir et progrès. Elle s'installe sur l'écran d'accueil et marche sans connexion.
 
-En ligne : https://kanelimamou-blip.github.io/revision/
+En ligne : https://kanelimamou-blip.github.io/racine-school/ (version Racine School de l'appli Révision)
 
 ## Fichiers
 
