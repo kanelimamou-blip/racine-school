@@ -137,3 +137,5 @@ details summary { cursor: pointer; color: var(--accent); font-weight: 600; margi
 .mois{padding:6px 0;border-bottom:1px solid var(--line)}.mois .btn{width:auto;padding:6px 10px}
 label.small{display:flex;flex-direction:column;gap:4px}
 label.row.small{flex-direction:row}
+.classe-edit{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.classe-edit .field{padding:8px;margin:0}.classe-edit .span{grid-column:1/-1}.classe-edit .btn{width:auto;padding:6px 10px}

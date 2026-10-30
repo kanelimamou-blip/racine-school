@@ -16,11 +16,22 @@ const avatar = (f, cls = "av") => f.photo ? `<img class="${cls}" src="${esc(f.ph
 const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
 const telLien = (t) => String(t || "").replace(/\D/g, "").replace(/^(?=[67]\d{8}$)/, "221");
 
+// Chaque classe garde un identifiant fixe : la direction peut la renommer sans perdre ses élèves ni ses devoirs
+function slugClasse(nom) { return "c-" + String(nom).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+const classeById = (cfg, id) => cfg.classes.find((c) => c.id === id);
+const cidDe = (cfg, x) => x.cid || x.classeId || (cfg.classes.find((c) => c.nom === x.classe) || {}).id || x.classe;
+// élèves et devoirs rattachés à leur classe par identifiant, avec le nom de classe à jour
+function rattacher(cfg, items) {
+  return items.map((x) => { const cid = cidDe(cfg, x), c = classeById(cfg, cid); return { ...x, cid, classe: c ? c.nom : x.classe }; });
+}
 const ECOLE_DEFAUT = {
   annee: "2026-2027", debut: "2026-10", fin: "2027-07", inscription: 25000,
   mensualites: { "6e": 15000, "5e": 15000, "4e": 17500, "3e": 20000, "2nde": 22500, "1ère": 25000, "Tle": 27500 },
-  classes: [["6e A", "6e"], ["6e B", "6e"], ["5e A", "5e"], ["5e B", "5e"], ["4e A", "4e"], ["4e B", "4e"], ["3e A", "3e"], ["3e B", "3e"],
-    ["2nde L", "2nde L"], ["2nde S", "2nde S"], ["1ère L2", "1ère L2"], ["1ère S2", "1ère S2"], ["Tle L2", "Tle L2"], ["Tle S2", "Tle S2"]].map(([nom, level]) => ({ nom, level })),
+  // liste indicative pour une grande école : la direction renomme, ajoute ou supprime les classes dans « Réglages »
+  classes: [...["6e", "5e", "4e", "3e"].flatMap((n) => "ABCDE".split("").map((l) => [`${n} ${l}`, n])),
+    ["2nde L A", "2nde L"], ["2nde L B", "2nde L"], ["2nde S A", "2nde S"], ["2nde S B", "2nde S"],
+    ["1ère L A", "1ère L2"], ["1ère L B", "1ère L2"], ["1ère S1", "1ère S1"], ["1ère S2 A", "1ère S2"], ["1ère S2 B", "1ère S2"],
+    ["Tle L A", "Tle L2"], ["Tle L B", "Tle L2"], ["Tle S1", "Tle S1"], ["Tle S2 A", "Tle S2"], ["Tle S2 B", "Tle S2"]].map(([nom, level]) => ({ id: slugClasse(nom), nom, level })),
 };
 
 // Mois de scolarité déjà échus (inscription comprise) : ceux qu'un élève à jour a réglés
@@ -55,7 +66,8 @@ const Ecole = (() => {
     if (cfgCache) return cfgCache;
     let c = L.config;
     if (online()) c = (await db().collection("ecole").doc("config").get().catch(() => null))?.data() || c;
-    return (cfgCache = { ...ECOLE_DEFAUT, ...(c || {}) });
+    c = { ...ECOLE_DEFAUT, ...(c || {}) };
+    return (cfgCache = { ...c, classes: c.classes.map((x) => ({ ...x, id: x.id || slugClasse(x.nom) })) });
   }
   async function setConfig(c) {
     cfgCache = c; L.config = c; keep();
@@ -86,9 +98,9 @@ const Ecole = (() => {
   async function devoirs(classe = null) {
     let list;
     if (shared()) {
-      const q = classe ? db().collection("devoirs").where("classe", "==", classe) : db().collection("devoirs");
+      const q = classe ? db().collection("devoirs").where("cid", "==", classe) : db().collection("devoirs");
       list = (await q.get()).docs.map((d) => ({ ...d.data(), id: d.id }));
-    } else list = (L.devoirs || []).filter((d) => !classe || d.classe === classe);
+    } else list = (L.devoirs || []).filter((d) => !classe || d.cid === classe);
     return list.sort((a, b) => a.date.localeCompare(b.date));
   }
   async function addDevoir(d) {
@@ -139,7 +151,7 @@ const Ecole = (() => {
         const fille = rnd() < 0.52, id = "demo-" + ++k, nom = pick(N), age = 11 + ["6e", "5e", "4e", "3e", "2nde", "1ère", "Tle"].indexOf(niveauOf(c.level));
         const rep = Math.floor(rnd() ** 1.5 * 650), jours = Math.floor(rnd() ** 2.2 * 21);
         const d = new Date(); d.setDate(d.getDate() - jours);
-        eleves[id] = { id, demo: true, prenom: pick(fille ? F : G), nom, sexe: fille ? "F" : "G", classe: c.nom, level: c.level,
+        eleves[id] = { id, demo: true, prenom: pick(fille ? F : G), nom, sexe: fille ? "F" : "G", classe: c.nom, classeId: c.id, level: c.level,
           naissance: `${2026 - age}-${String(1 + Math.floor(rnd() * 12)).padStart(2, "0")}-${String(1 + Math.floor(rnd() * 28)).padStart(2, "0")}`,
           tel: "77 000 " + String(k).padStart(4, "0").replace(/(\d\d)(\d\d)/, "$1 $2"), whatsapp: "", parent: `${pick(["M.", "Mme"])} ${nom}`, telParent: "78 000 " + String(k).padStart(4, "0").replace(/(\d\d)(\d\d)/, "$1 $2"),
           inscritLe: `2026-${rnd() < 0.7 ? "09" : "10"}-${String(1 + Math.floor(rnd() * 28)).padStart(2, "0")}`,
@@ -148,9 +160,9 @@ const Ecole = (() => {
       }
     }
     const t = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
-    const dv = [["3e A", "Devoir surveillé", "Mathématiques", "Théorème de Thalès et trigonométrie", 3], ["Tle S2", "Composition", "Sciences physiques", "Mécanique : lois de Newton", 6],
+    const dv = [["3e A", "Devoir surveillé", "Mathématiques", "Théorème de Thalès et trigonométrie", 3], ["Tle S2 A", "Composition", "Sciences physiques", "Mécanique : lois de Newton", 6],
       ["6e A", "Exercice à rendre", "Français", "Rédaction : raconter une journée au marché", 2], ["4e B", "Leçon à apprendre", "Histoire-Géographie", "La traite atlantique", 1]];
-    L.devoirs = [...(L.devoirs || []).filter((d) => !d.demo), ...dv.map(([classe, type, nom, note, j], i) => ({ id: "demo-d" + i, demo: true, classe, type, nom, note, date: t(j), par: "demo", parNom: "Équipe pédagogique", le: today() }))];
+    L.devoirs = [...(L.devoirs || []).filter((d) => !d.demo), ...dv.map(([classe, type, nom, note, j], i) => ({ id: "demo-d" + i, demo: true, classe, cid: (cfg.classes.find((c) => c.nom === classe) || {}).id || classe, type, nom, note, date: t(j), par: "demo", parNom: "Équipe pédagogique", le: today() }))];
     L.eleves = { ...Object.fromEntries(Object.entries(L.eleves || {}).filter(([, f]) => !f.demo)), ...eleves };
     L.paiements = pay; L.demo = true; keep();
   }
@@ -166,6 +178,11 @@ async function ecoleStart() {
     if (!S.role || S.role === "eleve") { const f = await Ecole.maFiche(); if (f && !S.fiche) { S.fiche = f; S.role = "eleve"; S.level = S.level || f.level; } }
     store.save();
   }
+  // classes renommées par la direction : nom à jour sur la fiche, choix du professeur gardés par identifiant
+  const cfg = await Ecole.config().catch(() => null);
+  if (cfg && S.fiche) { const c = classeById(cfg, cidDe(cfg, S.fiche)); if (c) S.fiche = { ...S.fiche, classeId: c.id, classe: c.nom, level: c.level }; }
+  if (cfg && S.profClasses) S.profClasses = S.profClasses.map((x) => (classeById(cfg, x) ? x : cidDe(cfg, { classe: x })));
+  store.save();
   await devoirsDansAgenda();
   Ecole.syncStats();
 }
@@ -173,7 +190,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 async function devoirsDansAgenda() {
   if (S.role !== "eleve" || !S.fiche) return;
-  const list = await Ecole.devoirs(S.fiche.classe).catch(() => []);
+  const list = await Ecole.devoirs(S.fiche.classeId || S.fiche.classe).catch(() => []);
   S.todo = S.todo || []; S.ecoleVus = S.ecoleVus || [];
   let n = 0;
   for (const d of list) {
@@ -243,7 +260,7 @@ async function viewInscription() {
       ${champ("nom", "Nom *", 'maxlength="40" autocomplete="family-name"')}
       ${champ("naissance", "Date de naissance", 'type="date"')}
       <label class="small">Sexe</label><div class="seg"><button type="button" data-s="F" aria-pressed="${f.sexe === "F"}">Fille</button><button type="button" data-s="G" aria-pressed="${f.sexe === "G"}">Garçon</button></div>
-      <label class="small">Classe *<select class="field" id="classe"><option value="">Choisis ta classe</option>${cfg.classes.map((c) => `<option${c.nom === f.classe ? " selected" : ""}>${esc(c.nom)}</option>`).join("")}</select></label></div>
+      <label class="small">Classe *<select class="field" id="classe"><option value="">Choisis ta classe</option>${cfg.classes.map((c) => `<option value="${esc(c.id)}"${c.id === cidDe(cfg, f) ? " selected" : ""}>${esc(c.nom)}</option>`).join("")}</select></label></div>
     <div class="card"><h2>Contacts</h2>
       ${champ("tel", "Mon numéro de téléphone", 'type="tel" inputmode="tel" maxlength="20" placeholder="77 123 45 67"')}
       ${champ("whatsapp", "Mon numéro WhatsApp", 'type="tel" inputmode="tel" maxlength="20" placeholder="Laisse vide si c\'est le même"')}
@@ -261,9 +278,9 @@ async function viewInscription() {
   document.getElementById("role").onclick = () => { delete S.role; store.save(); viewRole(); };
   document.getElementById("save").onclick = async () => {
     const v = (id) => document.getElementById(id).value.trim();
-    const msg = document.getElementById("msg"), classe = cfg.classes.find((c) => c.nom === v("classe"));
+    const msg = document.getElementById("msg"), classe = classeById(cfg, v("classe"));
     if (!v("prenom") || !v("nom") || !classe || !v("parent") || !v("telParent")) { msg.className = "msg-ko small"; msg.textContent = "Remplis les champs marqués d'une étoile (*)."; return; }
-    const fiche = { prenom: v("prenom"), nom: v("nom"), naissance: v("naissance"), sexe, classe: classe.nom, level: classe.level, tel: v("tel"), whatsapp: v("whatsapp") || v("tel"),
+    const fiche = { prenom: v("prenom"), nom: v("nom"), naissance: v("naissance"), sexe, classe: classe.nom, classeId: classe.id, level: classe.level, tel: v("tel"), whatsapp: v("whatsapp") || v("tel"),
       parent: v("parent"), telParent: v("telParent"), photo, inscritLe: f.inscritLe || today() };
     const nouveau = !S.fiche;
     S.fiche = fiche; S.level = classe.level; store.save();
@@ -292,7 +309,7 @@ async function viewEcole() {
   $view.innerHTML = `<h1>${S.role === "directeur" ? "Direction" : "Espace professeur"}</h1><p class="muted">Chargement…</p>`;
   try {
     const [cfg, eleves, devoirs, pay] = await Promise.all([Ecole.config(), Ecole.eleves(), Ecole.devoirs(), S.role === "directeur" ? Ecole.paiements() : {}]);
-    const ctx = { cfg, eleves: eleves.sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom)), devoirs, pay };
+    const ctx = { cfg, eleves: rattacher(cfg, eleves).sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom)), devoirs: rattacher(cfg, devoirs), pay };
     const head = `<div class="row"><h1>${S.role === "directeur" ? "Direction" : "Espace professeur"}</h1><span class="small muted">${esc(S.staffNom || "")}</span></div>
       ${Ecole.isDemo ? `<p class="demo small">Démonstration : élèves fictifs. <button class="linkbtn" id="demo-off">Effacer la démo</button></p>` : ""}${ongletsEcole(sub === "eleve" ? "eleves" : sub)}`;
     const views = { "": S.role === "directeur" ? vueEnsemble : vueClassesProf, eleves: vueEleves, eleve: vueFiche, paiements: vuePaiements, devoirs: vueDevoirs, reglages: vueReglages };
@@ -325,7 +342,7 @@ function vueEnsemble(ctx) {
   const filles = eleves.filter((f) => f.sexe === "F").length, actifs = eleves.filter(actif7).length;
   const avecRep = eleves.filter((f) => reussite(f) !== null);
   const moyReussite = avecRep.length ? Math.round(avecRep.reduce((n, f) => n + reussite(f), 0) / avecRep.length) : 0;
-  const parClasse = cfg.classes.map((c) => { const l = eleves.filter((f) => f.classe === c.nom), a = l.filter((f) => reussite(f) !== null);
+  const parClasse = cfg.classes.map((c) => { const l = eleves.filter((f) => f.cid === c.id), a = l.filter((f) => reussite(f) !== null);
     return { c, n: l.length, f: l.filter((f) => f.sexe === "F").length, actifs: l.filter(actif7).length, ret: l.filter((f) => retard(cfg, f, pay[f.id]).mois.length).length,
       reu: a.length ? Math.round(a.reduce((n, f) => n + reussite(f), 0) / a.length) : null }; });
   const max = Math.max(1, ...parClasse.map((x) => x.n));
@@ -337,7 +354,7 @@ function vueEnsemble(ctx) {
       <a class="card kpi" href="#ecole/paiements"><span class="small muted">Retards de paiement</span><b class="count ko-txt">${enRetard.length}</b><span class="small muted">${fcfa(enRetard.reduce((n, r) => n + r.montant, 0))} à recouvrer</span></a>
     </div>
     <div class="card"><h2>Répartition par classe</h2>
-      <div class="classes">${parClasse.map((x) => `<a class="crow2" href="#ecole/eleves/${encodeURIComponent(x.c.nom)}"><span><b>${esc(x.c.nom)}</b></span>
+      <div class="classes">${parClasse.map((x) => `<a class="crow2" href="#ecole/eleves/${encodeURIComponent(x.c.id)}"><span><b>${esc(x.c.nom)}</b></span>
         <span class="bar"><i style="width:${(100 * x.n) / max}%"></i></span><span class="small"><b>${x.n}</b> él.</span>
         <span class="small muted span">${x.f} F · ${x.n - x.f} G · ${x.actifs} actifs${x.reu !== null ? ` · ${x.reu} % réussite` : ""}${x.ret ? ` · <span class="ko-txt">${x.ret} en retard</span>` : ""}</span></a>`).join("")}</div></div>
     ${aSuivre.length ? `<div class="card"><h2>Élèves à suivre</h2><p class="small muted">Peu actifs cette semaine ou moins de 50 % de réussite.</p>${aSuivre.map((f) => ligneEleve(ctx, f)).join("")}</div>` : ""}
@@ -346,9 +363,9 @@ function vueEnsemble(ctx) {
 
 function vueEleves(ctx, classe) {
   const { cfg, eleves } = ctx, dir = S.role === "directeur";
-  const mesClasses = dir ? cfg.classes.map((c) => c.nom) : (S.profClasses || []);
-  const list = eleves.filter((f) => (classe ? f.classe === classe : mesClasses.includes(f.classe)));
-  return `<div class="card"><div class="row"><select class="field" id="cl"><option value="">Toutes ${dir ? "les classes" : "mes classes"}</option>${mesClasses.map((c) => `<option${c === classe ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+  const mesClasses = dir ? cfg.classes : cfg.classes.filter((c) => (S.profClasses || []).includes(c.id));
+  const list = eleves.filter((f) => (classe ? f.cid === classe : mesClasses.some((c) => c.id === f.cid)));
+  return `<div class="card"><div class="row"><select class="field" id="cl"><option value="">Toutes ${dir ? "les classes" : "mes classes"}</option>${mesClasses.map((c) => `<option value="${esc(c.id)}"${c.id === classe ? " selected" : ""}>${esc(c.nom)}</option>`).join("")}</select></div>
       <input class="field" id="cherche" placeholder="Chercher un élève…" autocomplete="off">
       <p class="small muted" id="nb">${list.length} élève${list.length > 1 ? "s" : ""}</p>
       <div id="liste">${list.map((f) => `<div data-q="${esc((nomComplet(f) + " " + f.classe).toLowerCase())}">${ligneEleve(ctx, f, { pay: dir })}</div>`).join("") || `<p class="muted">Aucun élève inscrit dans cette classe pour l'instant.</p>`}</div></div>`;
@@ -361,7 +378,7 @@ function vueFiche(ctx, id) {
   const tel = (t, wa = false) => t ? (f.demo ? `${esc(t)} <span class="small muted">(fictif)</span>` : `<a href="${wa ? `https://wa.me/${telLien(t)}` : `tel:${telLien(t)}`}"${wa ? ' target="_blank" rel="noopener"' : ""}>${esc(t)}</a>`) : "—";
   const relance = `Bonjour ${f.parent || ""}, ici la direction de Racine School. Sauf erreur de notre part, la scolarité de ${f.prenom} (${f.classe}) reste à régler pour : ${r.mois.map(moisNom).join(", ")}, soit ${fcfa(r.montant)}. Merci de passer à l'école ou de nous contacter. Bonne journée.`;
   const age = f.naissance ? Math.floor((new Date(today()) - new Date(f.naissance)) / 3.15576e10) : null;
-  return `<a class="small" href="#ecole/eleves/${encodeURIComponent(f.classe)}">← ${esc(f.classe)}</a>
+  return `<a class="small" href="#ecole/eleves/${encodeURIComponent(f.cid)}">← ${esc(f.classe)}</a>
     <div class="card" style="align-items:center;text-align:center">${avatar(f, "av big")}<h2>${esc(nomComplet(f))}</h2>
       <p class="muted">${esc(f.classe)}${age ? ` · ${age} ans` : ""}${f.sexe ? ` · ${f.sexe === "F" ? "fille" : "garçon"}` : ""}</p>
       <p class="small muted">Inscrit le ${f.inscritLe ? new Date(f.inscritLe + "T12:00").toLocaleDateString("fr-FR") : "—"}</p></div>
@@ -393,12 +410,12 @@ function vuePaiements(ctx) {
 
 function vueDevoirs(ctx) {
   const { cfg, devoirs } = ctx, dir = S.role === "directeur";
-  const classes = dir ? cfg.classes : cfg.classes.filter((c) => (S.profClasses || []).includes(c.nom));
-  const avenir = devoirs.filter((d) => d.date >= today() && (dir || (S.profClasses || []).includes(d.classe)));
+  const classes = dir ? cfg.classes : cfg.classes.filter((c) => (S.profClasses || []).includes(c.id));
+  const avenir = devoirs.filter((d) => d.date >= today() && (dir || (S.profClasses || []).includes(d.cid)));
   const lvl = (classes[0] || {}).level;
   return `<div class="card"><h2>Publier un devoir</h2>
       ${classes.length ? `<p class="small muted">Il arrive dans l'agenda de tous les élèves de la classe.</p>
-      <label class="small">Classe<select class="field" id="dcl">${classes.map((c) => `<option value="${esc(c.nom)}">${esc(c.nom)}</option>`).join("")}</select></label>
+      <label class="small">Classe<select class="field" id="dcl">${classes.map((c) => `<option value="${esc(c.id)}">${esc(c.nom)}</option>`).join("")}</select></label>
       <label class="small">Type<select class="field" id="dty">${TYPES_TODO.map((t) => `<option>${t}</option>`).join("")}</select></label>
       <label class="small">Matière<span id="dmat">${matieresDe(lvl)}</span></label>
       <label class="small">Pour le<input type="date" class="field" id="ddt" value="${isoDay(addDays(new Date(), 2))}"></label>
@@ -418,10 +435,16 @@ function vueReglages(ctx) {
       <div class="row"><label class="small" style="flex:1">Premier mois<input class="field" type="month" id="debut" value="${cfg.debut}"></label><label class="small" style="flex:1">Dernier mois<input class="field" type="month" id="fin" value="${cfg.fin}"></label></div>
       <label class="small">Frais d'inscription (FCFA)<input class="field" type="number" id="insc" value="${cfg.inscription}" min="0" step="500"></label></div>
     <div class="card"><h2>Mensualités (FCFA)</h2>${DATA.classes.map((n) => `<label class="row small">${n}<input class="field mens" style="max-width:140px" type="number" data-n="${n}" value="${cfg.mensualites[n] || 0}" min="0" step="500"></label>`).join("")}</div>
-    <div class="card"><h2>Classes de l'école</h2>
-      ${cfg.classes.map((c, i) => `<div class="row slot"><span><b>${esc(c.nom)}</b> <span class="small muted">programme ${esc(c.level)}</span></span><button class="btn alt small delc" data-i="${i}">✕</button></div>`).join("")}
-      <div class="row"><input class="field" id="cnom" placeholder="Nom (ex. : 5e C)" maxlength="20"><select class="field" id="clvl">${DATA.levels.map((l) => `<option>${esc(l)}</option>`).join("")}</select></div>
-      <button class="btn alt" id="cadd">Ajouter la classe</button></div>
+    <div class="card"><h2>Classes de l'école (${cfg.classes.length})</h2>
+      <p class="small muted">Liste indicative : change le nom d'une classe en touchant son nom, choisis le programme suivi, puis enregistre en bas. Les élèves inscrits suivent leur classe renommée.</p>
+      ${cfg.classes.map((c, i) => { const n = ctx.eleves.filter((f) => f.cid === c.id).length;
+        return `<div class="classe-edit" data-i="${i}"><input class="field cn" value="${esc(c.nom)}" maxlength="24" aria-label="Nom de la classe">
+          <select class="field clv" aria-label="Programme suivi">${DATA.levels.map((l) => `<option${l === c.level ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>
+          <button class="btn alt small delc" data-i="${i}" aria-label="Supprimer ${esc(c.nom)}">✕</button>${n ? `<span class="small muted span">${n} élève${n > 1 ? "s" : ""}</span>` : ""}</div>`; }).join("")}</div>
+    <div class="card"><h2>Ajouter des classes</h2>
+      <label class="small">Programme suivi<select class="field" id="clvl">${DATA.levels.map((l) => `<option>${esc(l)}</option>`).join("")}</select></label>
+      <label class="small">Noms des classes, séparés par des virgules<input class="field" id="cnoms" value="6e F, 6e G" maxlength="300"></label>
+      <button class="btn alt" id="cadd">Ajouter ces classes</button></div>
     <button class="btn" id="csave">Enregistrer les réglages</button><p id="cmsg" class="small"></p>
     <div class="card"><h2>Clés d'entrée</h2><p class="small muted">La clé de la direction et celle des professeurs sont dans le fichier remis à l'école. Donne la clé « PROF » à chaque professeur : il l'entre une fois sur son téléphone.</p></div>
     <button class="btn alt" id="quit">Changer de profil sur ce téléphone</button>`;
@@ -430,8 +453,8 @@ function vueReglages(ctx) {
 function vueClassesProf(ctx) {
   const { cfg, eleves } = ctx, mine = S.profClasses || [];
   return `<div class="card"><h2>Mes classes</h2><p class="small muted">Coche les classes où tu enseignes.</p>
-      <div class="chips">${cfg.classes.map((c) => `<label class="chip"><input type="checkbox" class="pc" value="${esc(c.nom)}"${mine.includes(c.nom) ? " checked" : ""}> ${esc(c.nom)}</label>`).join("")}</div></div>
-    ${mine.map((c) => { const l = eleves.filter((f) => f.classe === c), a = l.filter((f) => reussite(f) !== null);
+      <div class="chips">${cfg.classes.map((c) => `<label class="chip"><input type="checkbox" class="pc" value="${esc(c.id)}"${mine.includes(c.id) ? " checked" : ""}> ${esc(c.nom)}</label>`).join("")}</div></div>
+    ${cfg.classes.filter((c) => mine.includes(c.id)).map(({ id, nom: c }) => { const l = eleves.filter((f) => f.cid === id), a = l.filter((f) => reussite(f) !== null);
       return `<div class="card"><div class="row"><h2>${esc(c)}</h2><span class="small muted">${l.length} élève${l.length > 1 ? "s" : ""}${a.length ? ` · ${Math.round(a.reduce((n, f) => n + reussite(f), 0) / a.length)} % réussite` : ""}</span></div>
         ${l.map((f) => ligneEleve(ctx, f)).join("") || `<p class="small muted">Aucun élève inscrit pour l'instant.</p>`}</div>`; }).join("")}
     ${!ctx.eleves.length ? `<button class="btn alt" id="demo-on">Voir une démonstration avec des élèves fictifs</button>` : ""}
@@ -463,13 +486,13 @@ const bindEcole = {
   },
   devoirs: (ctx) => {
     const cl = document.getElementById("dcl");
-    if (cl) cl.onchange = () => { const c = ctx.cfg.classes.find((x) => x.nom === cl.value); document.getElementById("dmat").innerHTML = matieresDe(c && c.level); };
+    if (cl) cl.onchange = () => { const c = classeById(ctx.cfg, cl.value); document.getElementById("dmat").innerHTML = matieresDe(c && c.level); };
     const add = document.getElementById("dadd");
     if (add) add.onclick = async () => {
       const sid = document.getElementById("dsid").value, date = document.getElementById("ddt").value;
       if (!date) return;
       add.disabled = true;
-      await Ecole.addDevoir({ classe: cl.value, type: document.getElementById("dty").value, date, note: document.getElementById("dnote").value.trim(), ...(sid ? { sid } : { nom: "Vie scolaire" }) }).catch(() => {});
+      await Ecole.addDevoir({ cid: cl.value, classe: classeById(ctx.cfg, cl.value).nom, type: document.getElementById("dty").value, date, note: document.getElementById("dnote").value.trim(), ...(sid ? { sid } : { nom: "Vie scolaire" }) }).catch(() => {});
       viewEcole();
     };
     $view.querySelectorAll(".rm").forEach((b) => b.onclick = async () => { await Ecole.delDevoir(b.dataset.id).catch(() => {}); viewEcole(); });
@@ -477,16 +500,27 @@ const bindEcole = {
   reglages: (ctx) => {
     quitter();
     const cfg = { ...ctx.cfg, classes: ctx.cfg.classes.slice(), mensualites: { ...ctx.cfg.mensualites } };
-    $view.querySelectorAll(".delc").forEach((b) => b.onclick = () => { b.closest(".slot").remove(); cfg.classes[+b.dataset.i] = null; });
+    $view.querySelectorAll(".delc").forEach((b) => b.onclick = () => { b.closest(".classe-edit").remove(); cfg.classes[+b.dataset.i] = null; });
+    const lvl = document.getElementById("clvl"), noms = document.getElementById("cnoms");
+    lvl.onchange = () => { const n = lvl.value; noms.value = "ABC".split("").map((l) => `${n} ${l}`).join(", "); };
+    // les changements en cours (noms, programmes, montants) sont gardés aussi quand on ajoute des classes
+    const v = (id) => document.getElementById(id).value;
+    const lire = () => {
+      $view.querySelectorAll(".classe-edit").forEach((d) => { const c = cfg.classes[+d.dataset.i]; if (c) cfg.classes[+d.dataset.i] = { ...c, nom: d.querySelector(".cn").value.trim() || c.nom, level: d.querySelector(".clv").value }; });
+      $view.querySelectorAll(".mens").forEach((i) => { cfg.mensualites[i.dataset.n] = +i.value || 0; });
+      return { ...cfg, classes: cfg.classes.filter(Boolean), annee: v("annee").trim() || cfg.annee, debut: v("debut") || cfg.debut, fin: v("fin") || cfg.fin, inscription: +v("insc") || 0 };
+    };
     document.getElementById("cadd").onclick = async () => {
-      const nom = document.getElementById("cnom").value.trim(), level = document.getElementById("clvl").value;
-      if (!nom || cfg.classes.some((c) => c && c.nom === nom)) return;
-      await Ecole.setConfig({ ...ctx.cfg, classes: [...ctx.cfg.classes, { nom, level }] }); viewEcole();
+      const cur = lire(), existe = new Set(cur.classes.map((c) => c.nom.toLowerCase()));
+      const neuves = [...new Set(noms.value.split(",").map((x) => x.trim()).filter((x) => x && !existe.has(x.toLowerCase())))]
+        .map((nom, i) => ({ id: slugClasse(nom) + "-" + (Date.now() + i).toString(36), nom: nom.slice(0, 24), level: lvl.value }));
+      if (!neuves.length) return;
+      const rang = (c) => DATA.classes.indexOf(niveauOf(c.level));
+      const classes = [...cur.classes, ...neuves].sort((x, y) => rang(x) - rang(y) || x.nom.localeCompare(y.nom, "fr", { numeric: true }));
+      await Ecole.setConfig({ ...cur, classes }); viewEcole();
     };
     document.getElementById("csave").onclick = async () => {
-      const v = (id) => document.getElementById(id).value;
-      $view.querySelectorAll(".mens").forEach((i) => { cfg.mensualites[i.dataset.n] = +i.value || 0; });
-      await Ecole.setConfig({ ...cfg, classes: cfg.classes.filter(Boolean), annee: v("annee").trim() || cfg.annee, debut: v("debut") || cfg.debut, fin: v("fin") || cfg.fin, inscription: +v("insc") || 0 })
+      await Ecole.setConfig(lire())
         .then(() => { const m = document.getElementById("cmsg"); m.className = "msg-ok small"; m.textContent = "Réglages enregistrés."; })
         .catch(() => { const m = document.getElementById("cmsg"); m.className = "msg-ko small"; m.textContent = "L'enregistrement n'a pas abouti."; });
     };
