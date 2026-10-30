@@ -197,6 +197,16 @@ service cloud.firestore {
       allow read: if isEquipe();
       allow write: if isStaff();
     }
+    // registres de l'école (discipline, main courante, inventaire...) ; la paie et les dépenses restent à la caisse
+    match /registres/{id} {
+      allow read, delete: if isEquipe() && (!(resource.data.reg in ['paie', 'depenses']) || isCaisse());
+      allow create, update: if isEquipe() && (!(request.resource.data.reg in ['paie', 'depenses']) || isCaisse());
+    }
+    // pré-inscriptions déposées par les familles, traitées par la direction et la caisse
+    match /preinscriptions/{id} {
+      allow create: if signedIn();
+      allow read, update, delete: if isCaisse();
+    }
     // annonces et calendrier de l'école : publiés par la direction, lus par tous
     match /annonces/{id} {
       allow read: if signedIn();
