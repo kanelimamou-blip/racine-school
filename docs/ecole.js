@@ -2,8 +2,7 @@
 // Espace école de Racine School : profils (élève, parent, professeur, surveillant, personnel, direction), fiche d'inscription de l'élève,
 // tableau de bord de la direction (effectifs, classes, progrès, paiements), devoirs publiés par les professeurs.
 // La vie scolaire (annonces, appel, portail, carte d'élève, documents, espace parent) est dans vie-scolaire.js.
-// Avec le Firebase de l'école, tout est partagé en ligne (Firestore) ; sans lui, tout reste sur ce téléphone,
-// ce qui permet aussi de présenter l'appli avec des élèves de démonstration.
+// Avec le Firebase de l'école, tout est partagé en ligne (Firestore) ; sans lui, tout reste sur ce téléphone.
 
 const ROLES = { eleve: "Élève", parent: "Parent", prof: "Professeur", surveillant: "Surveillant", personnel: "Personnel", directeur: "Direction" };
 const CLE_PREFIXE = { prof: "PROF", surveillant: "SURV", personnel: "PERS", directeur: "DIR" };
@@ -63,8 +62,7 @@ const Ecole = (() => {
   const keep = () => { try { localStorage.setItem(KEY, JSON.stringify(L)); } catch {} };
   const online = () => !!(Compte.enabled && Compte.user && window.firebase);
   const db = () => firebase.firestore();
-  // pendant une démonstration, la direction voit des élèves fictifs gardés sur ce téléphone, jamais envoyés en ligne
-  const shared = () => online() && !L.demo;
+  const shared = () => online();
   const myId = () => (online() ? Compte.user.uid : (S.idLocal = S.idLocal || "moi-" + Math.random().toString(36).slice(2, 10)));
   let cfgCache = null;
 
@@ -228,155 +226,16 @@ const Ecole = (() => {
     S.statsSync = Date.now(); store.save();
     saveFiche({ ...S.fiche, stats }).catch(() => {});
   }
-  // Démonstration : des élèves fictifs (noms courants, numéros neutralisés) pour présenter le tableau de bord
-  async function demo(on) {
-    const sansDemo = () => Object.fromEntries(Object.entries(L.col || {}).map(([k, c]) => [k, Object.fromEntries(Object.entries(c).filter(([, x]) => !x.demo))]));
-    if (!on) { L.eleves = Object.fromEntries(Object.entries(L.eleves || {}).filter(([, f]) => !f.demo)); L.paiements = {}; L.devoirs = (L.devoirs || []).filter((d) => !d.demo); L.col = sansDemo(); L.demo = false; keep(); return; }
-    let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const pick = (a) => a[Math.floor(rnd() * a.length)];
-    const F = "Aïssatou Fatou Awa Mariama Khady Ndeye Aminata Coumba Astou Bineta Rokhaya Seynabou Dieynaba Adama Maïmouna Sokhna Yacine".split(" ");
-    const G = "Moussa Mamadou Ibrahima Cheikh Abdoulaye Ousmane Modou Serigne Pape Babacar Alioune Lamine Omar Saliou Assane Malick".split(" ");
-    const N = "Diop Ndiaye Fall Sow Ba Diallo Gueye Faye Sarr Mbaye Cissé Thiam Seck Kane Diouf Niang Sy Camara Ndour Wade Mbengue Touré".split(" ");
-    const cfg = await config(), eleves = {}, pay = {};
-    let k = 0;
-    for (const c of cfg.classes) {
-      const n = 8 + Math.floor(rnd() * 9);
-      for (let i = 0; i < n; i++) {
-        const fille = rnd() < 0.52, id = "demo-" + ++k, nom = pick(N), age = 11 + ["6e", "5e", "4e", "3e", "2nde", "1ère", "Tle"].indexOf(niveauOf(c.level));
-        const rep = Math.floor(rnd() ** 1.5 * 650), jours = Math.floor(rnd() ** 2.2 * 21);
-        const d = new Date(); d.setDate(d.getDate() - jours);
-        eleves[id] = { id, demo: true, codeParent: "DEMO" + String(k).padStart(4, "0"), prenom: pick(fille ? F : G), nom, sexe: fille ? "F" : "G", classe: c.nom, classeId: c.id, level: c.level,
-          naissance: `${2026 - age}-${String(1 + Math.floor(rnd() * 12)).padStart(2, "0")}-${String(1 + Math.floor(rnd() * 28)).padStart(2, "0")}`,
-          tel: "77 000 " + String(k).padStart(4, "0").replace(/(\d\d)(\d\d)/, "$1 $2"), whatsapp: "", parent: `${pick(["M.", "Mme"])} ${nom}`, telParent: "78 000 " + String(k).padStart(4, "0").replace(/(\d\d)(\d\d)/, "$1 $2"),
-          inscritLe: `2026-${rnd() < 0.7 ? "09" : "10"}-${String(1 + Math.floor(rnd() * 28)).padStart(2, "0")}`,
-          stats: { rep, ok: Math.round(rep * (0.42 + rnd() * 0.48)), derniere: rep ? d.toISOString().slice(0, 10) : null, jours7: rep ? Math.max(0, 6 - Math.floor(jours / 2) - Math.floor(rnd() * 3)) : 0, moy: rep ? Math.round((7 + rnd() * 11) * 10) / 10 : null,
-            mat: rep ? Object.fromEntries(subjectsOf(c.level || "6e").filter((m) => !/annales/.test(m.id)).map((m, j) => { const n = 5 + Math.floor(rnd() * 40); return [m.id, [n, Math.round(n * (0.3 + rnd() * 0.6 - (j % 3) * 0.08))]]; })) : {} } };
-        pay[id] = Object.fromEntries(moisEchus(cfg).filter((m) => rnd() < (m === "inscription" ? 0.95 : 0.83)).map((m) => [m, { le: "2026-10-0" + (1 + Math.floor(rnd() * 8)) }]));
-      }
-    }
-    const t = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
-    const dv = [["3e A", "Devoir surveillé", "Mathématiques", "Théorème de Thalès et trigonométrie", 3], ["Tle S2 A", "Composition", "Sciences physiques", "Mécanique : lois de Newton", 6],
-      ["6e A", "Exercice à rendre", "Français", "Rédaction : raconter une journée au marché", 2], ["4e B", "Leçon à apprendre", "Histoire-Géographie", "La traite atlantique", 1]];
-    L.devoirs = [...(L.devoirs || []).filter((d) => !d.demo), ...dv.map(([classe, type, nom, note, j], i) => ({ id: "demo-d" + i, demo: true, classe, cid: (cfg.classes.find((c) => c.nom === classe) || {}).id || classe, type, nom, note, date: t(j), par: "demo", parNom: "Équipe pédagogique", le: today() }))];
-    L.eleves = { ...Object.fromEntries(Object.entries(L.eleves || {}).filter(([, f]) => !f.demo)), ...eleves };
-    // vie scolaire du jour : équipe, annonces, appels, retards au portail, cours vus, encaissements
-    const ids = Object.keys(eleves), parCl = (cid) => ids.filter((i) => eleves[i].classeId === cid);
-    const col = sansDemo(), mettre = (c, id, x) => { col[c] = { ...(col[c] || {}), [id]: { ...x, id, demo: true } }; };
-    [["M. Babacar Sy", "directeur", "Directeur des études"], ["Mme Aminata Diallo", "prof", "Mathématiques"], ["M. Ousmane Sarr", "prof", "Français"], ["Mme Khady Fall", "prof", "Sciences physiques"],
-      ["M. Modou Ndiaye", "surveillant", "Surveillant général"], ["Mme Awa Gueye", "personnel", "Secrétariat"], ["M. Lamine Kane", "personnel", "Caisse et comptabilité"]]
-      .forEach(([nom, role, poste], i) => mettre("annuaire", "demo-s" + i, { nom, role, poste, tel: "77 000 90 " + String(10 + i) }));
-    [["Réunion des parents d'élèves", "Rencontre avec les professeurs principaux, de 16 h à 18 h dans la cour.", "parents", 8],
-      ["Compositions du premier trimestre", "Toutes les classes. Le calendrier par matière est affiché au tableau de chaque classe.", "tous", 24],
-      ["Journée de l'excellence", "Remise des prix aux meilleurs élèves de l'an dernier. Tenue correcte exigée.", "tous", 13],
-      ["Conseil des professeurs", "Point sur les progressions et préparation des compositions.", "profs", 5],
-      ["Rappel : port de la tenue scolaire", "La tenue est obligatoire tous les jours, y compris le samedi.", "eleves", null]]
-      .forEach(([titre, texte, cible, j], i) => mettre("annonces", "demo-a" + i, { titre, texte, cible, date: j === null ? "" : t(j), par: "demo", parNom: "La direction", le: t(-i) }));
-    const heure = (h, m) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-    const seance = [["Mathématiques", "Théorème de Pythagore"], ["Français", "Le récit : schéma narratif"], ["Sciences physiques", "Les circuits électriques"], ["Histoire-Géographie", "Les grands ensembles du Sénégal"]];
-    cfg.classes.filter((_, i) => i % 3 === 0).forEach((c, i) => {
-      const l = parCl(c.id), abs = l.filter(() => rnd() < 0.09), ret = l.filter((x) => !abs.includes(x) && rnd() < 0.05);
-      mettre("appels", `demo-${today()}-${c.id}`, { cid: c.id, classe: c.nom, date: today(), heure: heure(8, 5 + (i % 4) * 5), absents: abs, retards: ret, par: "demo", parNom: ["Mme Aminata Diallo", "M. Ousmane Sarr", "Mme Khady Fall"][i % 3] });
-      const [mat, titre] = seance[i % seance.length], s = subjectsOf(c.level).find((x) => x.name.startsWith(mat.split(" ")[0]));
-      mettre("seances", `demo-se${i}`, { cid: c.id, classe: c.nom, date: today(), sid: s ? s.id : "", matiere: s ? s.name : mat, titre, par: "demo", parNom: "Équipe pédagogique" });
-    });
-    const retardsPortail = {}; ids.filter(() => rnd() < 0.015).slice(0, 8).forEach((id, i) => { retardsPortail[id] = ["07:52", "07:55", "07:58", "08:01", "08:04", "08:07", "08:10", "08:16"][i]; });
-    mettre("portail", today(), { date: today(), retards: retardsPortail });
-    ids.filter(() => rnd() < 0.03).slice(0, 9).forEach((id) => {
-      const m = moisEchus(cfg).filter((x) => !pay[id][x]).pop() || ceMois();
-      pay[id][m] = { le: today(), recu: numeroRecu(), montant: montantDu(cfg, eleves[id], m), par: "M. Lamine Kane" };
-    });
-    // notes du premier trimestre : un devoir et une composition dans trois matières par classe
-    cfg.classes.forEach((c, ci) => {
-      const l = parCl(c.id);
-      subjectsOf(c.level).filter((x) => !/annales/.test(x.id)).slice(0, 4).forEach((m, mi) => [["Devoir 1", "Devoir surveillé", 1, -40], ["Composition", "Composition", 2, -18]].forEach(([titre, type, coef, j], ti) => {
-        const notes = Object.fromEntries(l.map((id) => { const st = eleves[id].stats, base = st.rep ? (20 * st.ok) / st.rep : 10;
-          return [id, Math.max(0, Math.min(20, Math.round((base - 3 + rnd() * 6) * 4) / 4))]; }));
-        mettre("notes", `demo-n${ci}-${mi}-${ti}`, { cid: c.id, classe: c.nom, sid: m.id, matiere: m.name, titre, type, trimestre: "1", coef, sur: 20, date: t(j), notes, par: "demo", parNom: "Équipe pédagogique" });
-      }));
-    });
-    // emplois du temps : matinées du lundi au samedi, trois après-midi ; un professeur par matière
-    const profDe = (nom) => /math/i.test(nom) ? "Mme Aminata Diallo" : /fran/i.test(nom) ? "M. Ousmane Sarr" : /physi|svt|vie/i.test(nom) ? "Mme Khady Fall" : `M. ${pick(N)} (${nom.split(" ")[0]})`;
-    const plages = [[0, "08:00", "10:00"], [0, "10:15", "12:00"], [0, "15:00", "17:00"], [1, "08:00", "10:00"], [1, "10:15", "12:00"], [2, "08:00", "10:00"], [2, "10:15", "12:00"], [3, "08:00", "10:00"], [3, "10:15", "12:00"], [3, "15:00", "17:00"], [4, "08:00", "10:00"], [4, "10:15", "12:00"], [5, "08:00", "10:00"], [5, "10:15", "12:00"]];
-    cfg.classes.forEach((c, ci) => {
-      const mats = subjectsOf(c.level).filter((x) => !/annales/.test(x.id));
-      // l'équipe fictive enseigne dans les trois premières classes ; ailleurs, d'autres professeurs
-      const profs = Object.fromEntries(mats.map((m) => [m.id, ci < 3 ? profDe(m.name) : `${pick(["M.", "Mme"])} ${pick(N)} (${m.name.split(/[ -]/)[0]})`]));
-      mettre("edt", c.id, { cid: c.id, classe: c.nom, creneaux: plages.map(([jour, debut, fin], k) => { const m = mats[(k + ci) % mats.length]; return { jour, debut, fin, sid: m.id, matiere: m.name, prof: profs[m.id], salle: "Salle " + (ci + 1) }; }) });
-      mats.forEach((m) => { const n = programmeDe(m.id).length; if (n) mettre("progressions", `${c.id}_${m.id}`, { cid: c.id, sid: m.id, faits: [...Array(Math.floor(n * (0.05 + rnd() * 0.3))).keys()], par: "demo", parNom: profs[m.id], le: t(-Math.floor(rnd() * 10)) }); });
-    });
-    // registres : quelques lignes dans chacun
-    const el = (i) => eleves[ids[i % ids.length]], ref = (i) => ({ eleveId: el(i).id, eleveNom: `${el(i).prenom} ${el(i).nom}`, classe: el(i).classe });
-    const R = (id, x) => mettre("registres", "demo-r" + id, { par: "demo", parNom: "M. Modou Ndiaye", le: today(), ...x });
-    R(1, { reg: "discipline", ...ref(11), date: t(-2), type: "Bavardage", texte: "Bavardages répétés en cours de français.", sanction: "Mot aux parents" });
-    R(2, { reg: "discipline", ...ref(11), date: t(-1), type: "Insolence", texte: "A répondu au professeur.", sanction: "Retenue" });
-    R(3, { reg: "discipline", ...ref(40), date: today(), type: "Tenue non conforme", texte: "", sanction: "Avertissement oral" });
-    R(4, { reg: "maincourante", date: today(), heure: "10:20", categorie: "Infirmerie", ...ref(23), texte: "Maux de tête, a pris du repos 30 minutes." });
-    R(5, { reg: "maincourante", date: t(-1), heure: "12:05", categorie: "Objet trouvé", eleveNom: "", texte: "Calculatrice Casio trouvée dans la cour." });
-    R(6, { reg: "planning", date: today(), debut: "07:30", fin: "08:15", lieu: "Portail", personne: "M. Modou Ndiaye" });
-    R(7, { reg: "planning", date: today(), debut: "10:00", fin: "10:15", lieu: "Cour", personne: "M. Modou Ndiaye" });
-    [["Ramettes de papier et craies", "Fournitures", 85000, "Librairie Clairafrique"], ["Facture Senelec", "Électricité et eau", 142000, "Senelec"], ["Réparation de tables-bancs", "Entretien et réparations", 60000, "Menuiserie Ndiaye"]]
-      .forEach(([libelle, categorie, montant, fournisseur], i) => R(10 + i, { reg: "depenses", date: t(-3 * i - 1), libelle, categorie, montant, fournisseur, parNom: "M. Lamine Kane" }));
-    [["Mme Awa Gueye", 150000, 20000], ["M. Lamine Kane", 175000, 0], ["M. Modou Ndiaye", 140000, 30000]].forEach(([personne, brut, avance], i) => R(20 + i, { reg: "paie", mois: ceMois(), personne, brut, avance, net: brut - avance, paye: "" }));
-    [["Tables-bancs", "Mobilier", 420, "Bon", "Toutes les salles"], ["Ordinateurs", "Informatique", 12, "À réparer", "Salle informatique"], ["Vidéoprojecteur", "Informatique", 2, "Bon", "Bureau de la direction"], ["Manuels de maths 3e", "Manuels", 60, "Bon", "Bibliothèque"]]
-      .forEach(([article, categorie, quantite, etat, lieu], i) => R(30 + i, { reg: "inventaire", article, categorie, quantite, etat, lieu }));
-    R(40, { reg: "services", ...ref(5), service: "Cantine", formule: "Déjeuner du lundi au vendredi", montant: 10000, paye: ceMois() });
-    R(41, { reg: "services", ...ref(17), service: "Transport scolaire", formule: "Ligne Parcelles – école", montant: 15000, paye: "" });
-    R(50, { reg: "courrier", date: t(-4), sens: "Entrant", tiers: "Inspection d'académie", objet: "Calendrier des examens blancs", ref: "IA/2026/114" });
-    R(51, { reg: "bibliotheque", livre: "Une si longue lettre (Mariama Bâ)", ...ref(30), date: t(-20), retour: t(-6), rendu: "Prêté" });
-    R(52, { reg: "bibliotheque", livre: "L'Aventure ambiguë (Cheikh Hamidou Kane)", ...ref(31), date: t(-5), retour: t(9), rendu: "Prêté" });
-    R(60, { reg: "taches", titre: "Réparer la porte de la salle 4", personne: "M. Lamine Kane", echeance: t(2), statut: "À faire", parNom: "M. Babacar Sy" });
-    R(61, { reg: "taches", titre: "Imprimer les sujets de composition", personne: "Mme Awa Gueye", echeance: t(20), statut: "En cours", parNom: "M. Babacar Sy" });
-    R(70, { reg: "heures", date: t(-1), classe: "6e A", heures: 2, objet: "Cours de soutien", par: "demo", parNom: "Mme Aminata Diallo" });
-    [["Mme Awa Gueye", "07:42", ""], ["M. Lamine Kane", "07:55", ""], ["M. Modou Ndiaye", "07:20", ""], ["Mme Aminata Diallo", "07:50", ""]].forEach(([nom, arrivee], i) => R(80 + i, { reg: "pointage", date: today(), nom, arrivee }));
-    mettre("preinscriptions", "demo-p1", { prenom: "Khadija", nom: "Sarr", naissance: "2015-05-12", ecole: "École Liberté 6", parent: "Mme Sarr", tel: "77 000 88 01", classe: "6e", statut: "Nouvelle", le: t(-1) });
-    mettre("preinscriptions", "demo-p2", { prenom: "Babacar", nom: "Ndour", naissance: "2011-11-02", ecole: "CEM de Grand-Yoff", parent: "M. Ndour", tel: "77 000 88 02", classe: "2nde", statut: "Liste d'attente", le: t(-6) });
-    // retards de la semaine au portail, pour les seuils
-    [1, 2, 3].forEach((k) => mettre("portail", t(-k), { date: t(-k), retards: { [ids[11]]: "08:0" + k, [ids[23]]: "07:5" + k } }));
-    // demandes en attente : justificatif, autorisation, rendez-vous, question, congé, dépense
-    const D = (id, x) => mettre("demandes", "demo-d" + id, { statut: "attente", reponse: "", le: t(-1), par: "demo", ...x });
-    D(1, { type: "justificatif", role: "parent", ...ref(11), cid: el(11).classeId, parNom: el(11).parent, date: today(), texte: "Fièvre depuis hier soir, il reste à la maison aujourd'hui." });
-    D(2, { type: "autorisation", role: "parent", ...ref(23), cid: el(23).classeId, parNom: el(23).parent, objet: "Sortie anticipée", date: today(), texte: "Rendez-vous chez le dentiste à 15 h.", signe: true });
-    D(3, { type: "rdv", role: "parent", ...ref(5), cid: el(5).classeId, parNom: el(5).parent, avec: "La direction", date: t(4), texte: "Parler de l'orientation en seconde." });
-    D(4, { type: "question", role: "eleve", eleveId: el(1).id, parNom: `${el(1).prenom} ${el(1).nom}`, classe: el(1).classe, cid: el(1).classeId, matiere: "Mathématiques", texte: "Je n'ai pas compris comment simplifier une fraction quand le numérateur est plus grand." });
-    D(5, { type: "conge", role: "prof", parNom: "Mme Khady Fall", du: t(3), au: t(3), texte: "Formation à l'inspection d'académie." });
-    D(6, { type: "depense", role: "personnel", parNom: "M. Lamine Kane", libelle: "Cartouches d'encre", montant: 45000, texte: "Pour imprimer les sujets des compositions." });
-    D(7, { type: "signalement", role: "eleve", anonyme: true, parNom: "", classe: "4e B", texte: "Des grands de 3e prennent le goûter des petits à la récréation." });
-    mettre("absprofs", "demo-ab0", { profNom: "M. Ousmane Sarr", date: today(), motif: "Raison de santé", remplacant: "", classes: "6e A, 5e C", par: "demo" });
-    mettre("absprofs", "demo-ab1", { profNom: "Mme Khady Fall", date: t(3), motif: "Formation à l'inspection", remplacant: "Mme Aminata Diallo", classes: "4e B, 3e A", par: "demo" });
-    D(8, { type: "paiement", role: "parent", ...ref(17), cid: el(17).classeId, parNom: el(17).parent, mois: ceMois(), montant: montantDu(cfg, el(17), ceMois()), ref: "WAV-" + (481516 + 2342), texte: "" });
-    // communication : sondage, discussions, documents, historique
-    mettre("sondages", "demo-s0", { question: "Êtes-vous satisfaits de la communication de l'école ce trimestre ?", options: ["Très satisfait", "Satisfait", "Peu satisfait", "Pas satisfait"], cible: "parents", clos: false, par: "demo", le: t(-3) });
-    mettre("sondages", "demo-s1", { question: "Quel jour pour la journée culturelle ?", options: ["Vendredi 12", "Samedi 13", "Vendredi 19"], cible: "tous", clos: false, par: "demo", le: t(-1) });
-    ids.slice(0, 64).forEach((id, i) => mettre("votes", `demo-s${i % 3 ? 0 : 1}_${id}`, { sondage: `demo-s${i % 3 ? 0 : 1}`, choix: i % 3 ? pick(["Très satisfait", "Satisfait", "Satisfait", "Peu satisfait", "Pas satisfait"]) : pick(["Vendredi 12", "Samedi 13", "Vendredi 19"]), par: id, le: t(-1) }));
-    const c0 = cfg.classes[0], at = (j, h) => `${t(j)}T${h}:00`;
-    [["equipe", "Mme Aminata Diallo", "Bonjour à tous, la réunion pédagogique est maintenue jeudi à 16 h en salle des professeurs.", at(-2, "08:12")],
-      ["equipe", "M. Lamine Kane", "Les cartouches d'encre sont arrivées, passez au secrétariat pour vos tirages.", at(-1, "10:40")],
-      ["profs", "M. Ousmane Sarr", "Qui a encore le corrigé du devoir commun de 3e ? Je n'arrive pas à le retrouver.", at(-1, "17:05")],
-      ["profs", "Mme Khady Fall", "Je l'ai, je le mets dans Documents ce soir.", at(-1, "17:20")],
-      [c0.id, "Mme Aminata Diallo", `Bonjour la ${c0.nom}, n'oubliez pas vos compas demain pour la géométrie.`, at(-1, "18:00")],
-      [c0.id, `${el(0).prenom} ${el(0).nom}`, "D'accord madame, merci !", at(-1, "18:30")]].forEach(([canal, nom, texte, at2], i) => mettre("messages", "demo-m" + i, { canal, nom, texte, at: at2, par: "demo", role: "prof" }));
-    [["Règlement intérieur 2026-2027", "Règlement et circulaires", "tous", "https://drive.google.com"], ["Liste des fournitures de 6e", "Liste de fournitures", "parents", "https://drive.google.com"],
-      ["Cours : les fractions", "Support de cours", c0.id, "https://www.youtube.com"], ["Corrigé du devoir commun de 3e", "Ressource pour les professeurs", "profs", "https://drive.google.com"]]
-      .forEach(([titre, categorie, cible, lien], i) => mettre("documents", "demo-doc" + i, { titre, categorie, cible, lien, fichier: "", par: "demo", parNom: ["La direction", "La direction", "Mme Aminata Diallo", "Mme Khady Fall"][i], le: t(-i - 1) }));
-    [["Paiement enregistré : " + moisNom(ceMois()) + `, élève ${el(3).prenom} ${el(3).nom}`, "M. Lamine Kane", at(0, "09:14")], ["Notes saisies : Mathématiques " + c0.nom + " Devoir 1", "Mme Aminata Diallo", at(-1, "19:02")],
-      ["Paiement annulé : " + moisNom(ceMois()) + `, élève ${el(9).prenom} ${el(9).nom}`, "M. Lamine Kane", at(-2, "11:30")], ["Réglages de l'école modifiés", "Direction", at(-4, "08:00")]]
-      .forEach(([quoi, qui, at2], i) => mettre("journal", "demo-j" + i, { quoi, qui, at: at2, par: "demo" }));
-    // élèves : clubs, absences et retards, copies rendues, défi entre classes
-    [["Club de lecture", "Mercredi 15 h, bibliothèque", "Mme Khady Fall", "On lit, on discute, on écrit."], ["Football", "Samedi 9 h, terrain", "M. Ousmane Sarr", "Entraînement et tournoi inter-classes."],
-      ["Théâtre", "Vendredi 16 h, salle polyvalente", "Mme Aminata Diallo", "Préparation du spectacle de fin d'année."], ["Club scientifique", "Jeudi 16 h, laboratoire", "M. Ousmane Sarr", "Expériences et olympiades."]]
-      .forEach(([nom, jour, responsable, description], i) => mettre("clubs", "demo-club" + i, { nom, jour, responsable, description, le: t(-20) }));
-    ids.slice(0, 70).forEach((id, i) => { if (i % 3 === 0) mettre("membres", `demo-club${i % 4}_${id}`, { club: "demo-club" + (i % 4), par: id, nom: `${eleves[id].prenom} ${eleves[id].nom}`, classe: eleves[id].classe, le: t(-10) }); });
-    ids.forEach((id, i) => { const abs = {}, ret = {}; for (let j = 1; j < 30; j++) { const r = rnd(); if (r < 0.025) abs[t(-j)] = eleves[id].classe; else if (r < 0.05) ret[t(-j)] = eleves[id].classe; } if (Object.keys(abs).length + Object.keys(ret).length) mettre("assiduite", id, { abs, ret }); });
-    const dv0 = (L.devoirs || []).filter((d) => d.demo).sort((a, b) => b.date.localeCompare(a.date))[0];
-    if (dv0) parCl(dv0.cid).slice(0, 6).forEach((id, i) => mettre("rendus", `${dv0.id}_${id}`, { devoir: dv0.id, cid: dv0.cid, par: id, nom: `${eleves[id].prenom} ${eleves[id].nom}`, le: t(-1), corrige: i < 2, note: i < 2 ? ["15/20", "11/20"][i] : "", commentaire: i < 2 ? ["Bon travail, soigne la présentation.", "Revois la règle des fractions."][i] : "",
-      photo: `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400"><rect width="300" height="400" fill="#fffef8"/>${[...Array(12)].map((_, k) => `<line x1="20" x2="${200 + ((k * 37) % 80)}" y1="${50 + k * 28}" y2="${50 + k * 28}" stroke="#2a3a8a" stroke-width="2"/>`).join("")}<text x="20" y="30" font-size="16">${eleves[id].prenom} ${eleves[id].nom}</text></svg>`)}` }));
-    Object.keys(col.annonces || {}).forEach((a, j) => ids.slice(0, 20 + j * 9).forEach((id, i) => mettre("lectures", `${a}_${id}`, { annonce: a, par: id, le: t(-1), present: i % 3 === 0 })));
-    L.col = col;
-    L.paiements = pay; L.demo = true; keep();
+  // Anciennes données de démonstration (élèves fictifs) : effacées de ce téléphone
+  function sansDemo() {
+    if (!L.demo && !Object.values(L.eleves || {}).some((f) => f.demo)) return;
+    L.eleves = Object.fromEntries(Object.entries(L.eleves || {}).filter(([, f]) => !f.demo)); L.paiements = {}; L.devoirs = (L.devoirs || []).filter((d) => !d.demo);
+    L.col = Object.fromEntries(Object.entries(L.col || {}).map(([k, c]) => [k, Object.fromEntries(Object.entries(c).filter(([, x]) => !x.demo))])); L.demo = false; keep();
   }
-  return { config, setConfig, saveFiche, maFiche, eleves, paiements, payer, devoirs, addDevoir, delDevoir, claimRole, retirerAcces, monRole, setClasses, syncStats, demo,
+  sansDemo();
+  return { config, setConfig, saveFiche, maFiche, eleves, paiements, payer, devoirs, addDevoir, delDevoir, claimRole, retirerAcces, monRole, setClasses, syncStats,
     liste, lire, ecrire, effacer, lierEnfant, mesEnfants, enfant, myId, sauverEvaluation, supprimerEvaluation, releve,
-    get online() { return online(); }, get isDemo() { return !!L.demo; }, reset() { cfgCache = null; } };
+    get online() { return online(); }, reset() { cfgCache = null; } };
 })();
 
 // Au démarrage : profil et fiche retrouvés en ligne (nouveau téléphone), devoirs de la classe ajoutés à l'agenda
@@ -543,7 +402,7 @@ async function viewEcole() {
       annonces: annonces.sort((a, b) => String(b.le).localeCompare(String(a.le))), appels, portail: (portail && portail.retards) || {}, annuaire };
     const actif = { eleve: "eleves", recu: role === "parent" ? "" : "paiements", certificat: "eleves", registre: "registres", convocation: "", bulletin: { parent: "", prof: "notes" }[role] ?? "bulletins", bulletins: role === "prof" ? "notes" : "bulletins", notes: role === "prof" ? "notes" : "bulletins", journal: "registres", rapport: "", cloture: "", parents: "", defi: "", analyse: "", clubs: "registres", rendus: "devoirs" }[sub] ?? sub;
     const head = `<div class="row noprint"><h1>${titre}</h1><span class="small muted">${role === "parent" ? "" : esc(S.staffNom || "")}</span></div>
-      ${Ecole.isDemo ? `<p class="demo small noprint">Démonstration : élèves et équipe fictifs. ${role === "directeur" ? `<button class="linkbtn" id="demo-off">Effacer la démo</button>` : ""}</p>` : ""}${ongletsEcole(actif)}`;
+      ${ongletsEcole(actif)}`;
     const views = {
       "": { directeur: vueEnsemble, prof: vueProfAccueil, surveillant: vueAujourdhuiComplet, personnel: vueCaisse, parent: vueParent }[role],
       eleves: vueEleves, eleve: vueFicheComplete, paiements: vuePaiementsComplet, registres: vueRegistres, registre: vueRegistre, demandes: vueDemandes, convocation: vueConvocation, devoirs: (ctx) => `<a class="btn alt small" href="#ecole/rendus">📥 Copies rendues en photo</a>${vueDevoirs(ctx)}`, reglages: vueReglages,
@@ -553,10 +412,6 @@ async function viewEcole() {
       defi: vueDefi, analyse: vueAnalyse, clubs: vueClubs, rendus: vueRendus,
     };
     $view.innerHTML = head + (await views[sub](ctx, arg, arg2));
-    const off = document.getElementById("demo-off");
-    if (off) off.onclick = async () => { await Ecole.demo(false); viewEcole(); };
-    const on = document.getElementById("demo-on");
-    if (on) on.onclick = async () => { on.disabled = true; await Ecole.demo(true); viewEcole(); };
     quitter();
     const b = sub === "" ? bindEcole["accueil-" + role] || bindEcole[""] : bindEcole[sub];
     b && b(ctx, arg, arg2);
@@ -580,8 +435,7 @@ function ligneEleve(ctx, f, { pay = false } = {}) {
 function vueEnsemble(ctx) {
   const { cfg, eleves, pay } = ctx;
   if (!eleves.length) return `<div class="card"><h2>Aucun élève inscrit pour l'instant</h2>
-    <p class="muted">Les élèves apparaissent ici dès qu'ils remplissent leur fiche d'inscription dans l'appli.</p>
-    <button class="btn" id="demo-on">Voir une démonstration avec des élèves fictifs</button></div>`;
+    <p class="muted">Les élèves apparaissent ici dès qu'ils remplissent leur fiche d'inscription dans l'appli.</p></div>`;
   const ret = eleves.map((f) => retard(cfg, f, pay[f.id])), enRetard = ret.filter((r) => r.mois.length);
   const filles = eleves.filter((f) => f.sexe === "F").length, actifs = eleves.filter(actif7).length;
   const avecRep = eleves.filter((f) => reussite(f) !== null);
@@ -710,7 +564,6 @@ function vueClassesProf(ctx) {
       return `<div class="card"><div class="row"><h2>${esc(c)}${pp === S.staffNom ? " ⭐" : ""}</h2>${pp ? `<span class="small muted span">Prof. principal : ${esc(pp)}</span>` : ""}<span class="small muted">${l.length} élève${l.length > 1 ? "s" : ""}${a.length ? ` · ${Math.round(a.reduce((n, f) => n + reussite(f), 0) / a.length)} % réussite` : ""}</span></div>
         ${l.map((f) => ligneEleve(ctx, f)).join("") || `<p class="small muted">Aucun élève inscrit pour l'instant.</p>`}
         ${l.length ? `<a class="btn alt small" href="#ecole/parents/${encodeURIComponent(id)}">✉️ Écrire aux parents de la classe</a> <a class="btn alt small" href="#ecole/messages/${encodeURIComponent(id)}">💬 Discussion de la classe</a> <a class="btn alt small" href="#ecole/analyse/${encodeURIComponent(id)}">📊 Analyse par matière</a>` : ""}</div>`; }).join("")}
-    ${!ctx.eleves.length ? `<button class="btn alt" id="demo-on">Voir une démonstration avec des élèves fictifs</button>` : ""}
     <button class="btn alt" id="quit">Changer de profil sur ce téléphone</button>`;
 }
 

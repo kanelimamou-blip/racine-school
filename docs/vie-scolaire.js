@@ -160,7 +160,7 @@ function vueAujourdhui(ctx) {
     <div class="card"><h2>Retards au portail (${b.portail.length})</h2>${b.portail.map(([id, h]) => { const f = eleveDe(ctx, id); return f ? `<a class="lib eleve" href="#ecole/eleve/${encodeURIComponent(id)}">${avatar(f)}<span class="grow"><b>${esc(nomComplet(f))}</b><br><span class="small muted">${esc(f.classe)}</span></span><b>${esc(h)}</b></a>` : ""; }).join("") || `<p class="small muted">Aucun retard noté au portail.</p>`}
       <a class="btn alt small" href="#ecole/portail">Noter un retard au portail</a></div>
     ${sans.length ? `<div class="card"><h2>Classes sans appel (${sans.length})</h2><p class="small">${sans.map((c) => esc(c.nom)).join(" · ")}</p></div>` : ""}
-    ${!eleves.length ? `<p class="muted">Aucun élève inscrit pour l'instant. La direction peut charger une démonstration depuis son tableau de bord.</p>` : ""}`;
+    ${!eleves.length ? `<p class="muted">Aucun élève inscrit pour l'instant. Les élèves apparaissent dès qu'ils remplissent leur fiche dans l'appli.</p>` : ""}`;
 }
 
 // ---------- Portail : scanner la carte d'élève ou chercher le nom, l'heure d'arrivée est notée
@@ -185,7 +185,7 @@ function vueCaisse(ctx) {
       ${jour.map(({ f, m, x }) => `<a class="lib eleve" href="#ecole/recu/${encodeURIComponent(f.id)}/${m}">${avatar(f)}<span class="grow"><b>${esc(nomComplet(f))}</b><br><span class="small muted">${esc(f.classe)} · ${moisNom(m)} · reçu ${esc(x.recu || "")}</span></span><b class="small">${fcfa(x.montant || 0)}</b></a>`).join("") || `<p class="small muted">Aucun paiement aujourd'hui.</p>`}
       <a class="btn alt small" href="#ecole/cloture">🔒 Clôture de caisse du jour</a></div>
     <div class="btns"><a class="btn alt" href="#ecole/paiements">Voir les retards de paiement</a><a class="btn alt" href="#ecole/eleves">Listes, certificats et export Excel</a></div>
-    ${!eleves.length ? `<p class="muted">Aucun élève inscrit pour l'instant. La direction peut charger une démonstration depuis son tableau de bord.</p>` : ""}`;
+    ${!eleves.length ? `<p class="muted">Aucun élève inscrit pour l'instant. Les élèves apparaissent dès qu'ils remplissent leur fiche dans l'appli.</p>` : ""}`;
 }
 
 // ---------- Reçu et certificat : pages imprimables au nom de l'école
@@ -238,7 +238,7 @@ async function vueParent(ctx) {
       <p class="small muted">Entrez le code inscrit sur la carte d'élève de votre enfant (dans son appli : Accueil, puis « Ma carte d'élève »).</p>
       <input class="code" id="pcode" placeholder="Code à 8 caractères" autocomplete="off" maxlength="9">
       <button class="btn" id="plier">Valider</button><p id="pmsg" class="small"></p>
-      ${Ecole.isDemo ? `<p class="small demo">Démonstration : essayez le code DEMO0001 (ou DEMO0002, DEMO0003…).</p>` : ""}</div>`;
+</div>`;
   if (!ids.length) return ajout + `<button class="btn alt" id="quit">Changer de profil sur ce téléphone</button>`;
   const id = ids.includes(S.enfantActif) ? S.enfantActif : ids[0];
   const tous = await Promise.all(ids.map((x) => Ecole.enfant(x).catch(() => null)));
