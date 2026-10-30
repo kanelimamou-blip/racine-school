@@ -54,6 +54,24 @@ await t("admin ne publie pas d'annonce", F(setDoc(doc(admin, "annonces/a9"), { t
 await t("admin n'écrit pas les progrès d'alice", F(updateDoc(doc(admin, "users/alice"), { data: {} })));
 await t("imposteur ne lit pas la fiche d'alice", F(getDoc(doc(imposteur, "eleves/alice"))));
 
+// un seul essai par téléphone : devices/{id}
+const TEL = "abcdefghij0123456789";
+await t("alice enregistre son téléphone", S(setDoc(doc(alice, `devices/${TEL}`), { first: serverTimestamp(), uids: ["alice"] })));
+await t("identifiant de téléphone invalide refusé", F(setDoc(doc(bob, "devices/court"), { first: serverTimestamp(), uids: ["bob"] })));
+await t("bob ne recrée pas le téléphone d'alice", F(setDoc(doc(bob, `devices/${TEL}`), { first: serverTimestamp(), uids: ["bob"] })));
+await t("création avec un autre compte refusée", F(setDoc(doc(bob, "devices/zzzzzzzzzz0123456789"), { first: serverTimestamp(), uids: ["alice"] })));
+await t("création avec une date choisie refusée", F(setDoc(doc(bob, "devices/yyyyyyyyyy0123456789"), { first: new Date(2020, 0, 1), uids: ["bob"] })));
+await t("bob lit le téléphone (même appareil)", S(getDoc(doc(bob, `devices/${TEL}`))));
+await t("bob ne change pas la date", F(updateDoc(doc(bob, `devices/${TEL}`), { first: serverTimestamp(), uids: ["alice", "bob"] })));
+await t("bob ne retire pas alice", F(updateDoc(doc(bob, `devices/${TEL}`), { uids: ["bob"] })));
+await t("bob n'ajoute pas un autre compte", F(updateDoc(doc(bob, `devices/${TEL}`), { uids: ["alice", "carla"] })));
+await t("bob s'ajoute au téléphone", S(updateDoc(doc(bob, `devices/${TEL}`), { uids: ["alice", "bob"] })));
+await t("bob ne s'ajoute pas deux fois", F(updateDoc(doc(bob, `devices/${TEL}`), { uids: ["alice", "bob", "bob"] })));
+await t("bob ne supprime pas le téléphone", F(deleteDoc(doc(bob, `devices/${TEL}`))));
+await t("alice ne liste pas les téléphones", F(getDocs(collection(alice, "devices"))));
+await t("anonyme ne lit pas un téléphone", F(getDoc(doc(anon, `devices/${TEL}`))));
+await t("admin liste les téléphones", S(getDocs(collection(admin, "devices"))));
+
 // suspension
 await t("alice lit les annonces (active)", S(getDoc(doc(alice, "annonces/a1"))));
 await t("compte sans profil lit les annonces", S(getDoc(doc(imposteur, "annonces/a1"))));

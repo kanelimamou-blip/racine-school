@@ -184,7 +184,7 @@
     $view.innerHTML = `<h1>Les cours dans la vie</h1><p class="muted">Des problèmes du quotidien sénégalais avec les maths et la physique de l'école. Les nombres changent à chaque fois.</p>
       <div class="grid rub">${THEMES.map((t) => `<a class="subj tile" href="#vie/${t.id}"><span class="ico">${t.i}</span><b>${t.t}</b><span class="small muted">${t.d}</span></a>`).join("")}</div>
       <h2>Mes outils</h2>
-      <div class="grid rub">${[["flash", "🃏", "Fiches flash", "Retourne les cartes, révise l'essentiel"], ["formules", "📐", "Formulaire", "Toutes les formules, chapitre par chapitre"], ["moyenne", "🧮", "Simulateur de moyenne", "Combien me faut-il pour avoir mon examen ?"], ["minuteur", "⏲️", "Minuteur Pomodoro", "25 min de travail, 5 min de pause"], ["journal", "📓", "Mon journal", "Ce que j'ai compris aujourd'hui"], ["stress", "🌬️", "Gérer le stress", "Respiration, sommeil, jour J"]].map(([id, i, t, d]) => `<a class="subj tile" href="#outils/${id}"><span class="ico">${i}</span><b>${t}</b><span class="small muted">${d}</span></a>`).join("")}</div>`;
+      <div class="grid rub">${[["flash", "🃏", "Fiches flash", "Retourne les cartes, révise l'essentiel"], ["formules", "📐", "Formulaire", "Formules et repères à retenir, chapitre par chapitre"], ["moyenne", "🧮", "Simulateur de moyenne", "Combien me faut-il pour avoir mon examen ?"], ["minuteur", "⏲️", "Minuteur Pomodoro", "25 min de travail, 5 min de pause"], ["journal", "📓", "Mon journal", "Ce que j'ai compris aujourd'hui"], ["stress", "🌬️", "Gérer le stress", "Respiration, sommeil, jour J"]].map(([id, i, t, d]) => `<a class="subj tile" href="#outils/${id}"><span class="ico">${i}</span><b>${t}</b><span class="small muted">${d}</span></a>`).join("")}</div>`;
   }
 
   let pomo = null;
@@ -196,9 +196,9 @@
     const nota = (sid, p) => ((DATA.notions || {})[sid] || []).find((n) => n.pch === p);
     if (arg && arg.startsWith("formules")) {
       const subs = subjectsOf(S.level).filter((s) => (DATA.formules || {})[s.id]), sid = arg.split("/")[1], cur = subs.find((s) => s.id === sid) || subs[0];
-      if (!cur) { $view.innerHTML = `<h1>Formulaire</h1><div class="card"><p>Pas de formules pour ta classe.</p></div>${back}`; return; }
+      if (!cur) { $view.innerHTML = `<h1>Formulaire</h1><div class="card"><p>Pas encore de formulaire pour ta classe.</p></div>${back}`; return; }
       const chs = DATA.formules[cur.id], nb = chs.reduce((a, c) => a + c.f.length, 0);
-      $view.innerHTML = `<h1>Formulaire</h1><p class="muted">${esc(cur.name)} · ${chs.length} chapitres, ${nb} formules, dans l'ordre du programme. Garde-le ouvert pendant tes exercices.</p>${pick(subs, cur.id, "formules")}
+      $view.innerHTML = `<h1>Formulaire</h1><p class="muted">${esc(cur.name)} · ${chs.length} chapitres, ${nb} ${/maths|pc|svt|eco|compta/.test(cur.id) ? "formules et valeurs" : "repères à retenir"}, dans l'ordre du programme. Garde-le ouvert pendant tes exercices.</p>${pick(subs, cur.id, "formules")}
         <input class="field" id="fq" type="search" placeholder="Chercher dans toutes les matières (ex. : vitesse, Thalès)" aria-label="Chercher une formule">
         <div id="fl">${subs.flatMap((sb) => DATA.formules[sb.id].map((c) => { const n = nota(sb.id, c.p); return `<div class="card fch" data-s="${sb.id}"${sb.id === cur.id ? "" : " hidden"}><h2>${sb.id === cur.id ? "" : `<span class="small muted">${esc(sb.name)} · </span>`}${c.p + 1}. ${esc(c.t)}</h2><ul class="steps">${c.f.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>${n ? `<a class="small" href="#notion/${n.id}">📖 Revoir le cours de ce chapitre</a>` : ""}</div>`; })).join("")}</div>
         <p class="small muted" id="fv" hidden>Aucune formule trouvée.</p>${back}`;

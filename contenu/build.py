@@ -15,6 +15,12 @@ from pathlib import Path
 
 from annales import ANNALES, GUIDED, HOST
 from sujets_types import MODELE_ANNALES, MODELE_GUIDED
+from sujets_lg import ANNALES_LG, GUIDED_LG
+from sujets_tle2 import ANNALES_T2, GUIDED_T2
+from sujets_tle3 import ANNALES_T3, GUIDED_T3
+from complements_racine import ANNALES_RC, GUIDED_RC, QCM_RC
+MODELE_ANNALES += ANNALES_LG + ANNALES_T2 + ANNALES_T3 + ANNALES_RC
+MODELE_GUIDED.update({**GUIDED_LG, **GUIDED_T2, **GUIDED_T3, **GUIDED_RC})
 ANNALES = MODELE_ANNALES + ANNALES
 GUIDED = {**GUIDED, **MODELE_GUIDED}
 from q_plus import EXTRA
@@ -23,7 +29,14 @@ from q_plus_lycee import EXTRA_LYCEE
 from q_chapitres import CHAPITRE_FORCE, EXTRA_CHAPITRES
 from q_programme import QCM_CH
 from q_svt_plus import QCM_SVT
-for _sid, _chs in QCM_SVT.items():
+from q_tle_plus import QCM_TLE
+from q_tle_plus2 import QCM_TLE2
+from q_tle_plus3 import QCM_TLE3
+from q_tle_plus4 import QCM_TLE4
+from q_tle_s import QCM_TLE_S
+from q_tle_s2 import QCM_TLE_S2
+from q_tle_s3 import QCM_TLE_S3
+for _sid, _chs in [*QCM_SVT.items(), *QCM_TLE.items(), *QCM_TLE2.items(), *QCM_TLE3.items(), *QCM_TLE4.items(), *QCM_TLE_S.items(), *QCM_TLE_S2.items(), *QCM_TLE_S3.items(), *QCM_RC.items()]:
     for _t, _qs in _chs.items():
         QCM_CH.setdefault(_sid, {}).setdefault(_t, []).extend(_qs)
 from fiches import FICHES
@@ -43,15 +56,20 @@ from programmes import PROGRAMMES
 NOTIONS = {**NOTIONS, **NOTIONS_AUTRES}
 # notions qui complètent tout le programme, classe par classe (une par chapitre sans notion)
 import importlib
-for _mod, _var in [("notions_3e", "N3"), ("notions_tle_maths", "NTM"), ("notions_tle_pc", "NTP"), ("notions_tle_autres", "NTA"), ("notions_2nde", "N2"), ("notions_1ere", "N1"), ("notions_g", "NG"), ("notions_6e", "N6"), ("notions_5e", "N5"), ("notions_4e", "N4")]:
+for _mod, _var in [("notions_3e", "N3"), ("notions_tle_maths", "NTM"), ("notions_tle_pc", "NTP"), ("notions_tle_autres", "NTA"), ("notions_2nde", "N2"), ("notions_1ere", "N1"), ("notions_g", "NG"), ("notions_6e", "N6"), ("notions_5e", "N5"), ("notions_4e", "N4"), ("notions_lg", "NLG"), ("notions_tle_com", "NTC"), ("notions_tle_com2", "NTC2"), ("complements_racine", "NRC")]:
     for _sid, _lst in getattr(importlib.import_module(_mod), _var).items():
         NOTIONS.setdefault(_sid, []).extend(_lst)
 # matières ajoutées : maths des séries L et G, espagnol LV2
 from matieres_plus import SUBJECTS_PLUS, PROG_PLUS, QCM_PLUS, N_PLUS
 PROGRAMMES.update(PROG_PLUS)
-QCM_CH.update(QCM_PLUS)
+for _sid, _chs in QCM_PLUS.items():
+    for _t, _qs in _chs.items():
+        QCM_CH.setdefault(_sid, {}).setdefault(_t, [])[:0] = _qs
 for _sid, _lst in N_PLUS.items():
     NOTIONS.setdefault(_sid, []).extend(_lst)
+# notions supplémentaires L et G après la notion principale de chaque chapitre
+for _sid in NOTIONS:
+    NOTIONS[_sid].sort(key=lambda n: n["id"].startswith(("lg-", "x-")))
 # synthèses chapitre par chapitre là où il n'y avait qu'une fiche générale (gardée en fin de synthèse)
 from syntheses_auto import auto_synth
 from formules import formulaire
@@ -153,6 +171,23 @@ service cloud.firestore {
         && request.resource.data.level is string && request.resource.data.level.size() <= 20
         && request.resource.data.at == request.time;
       allow delete: if false;
+    }
+    // un seul essai gratuit par téléphone : chaque compte lit le document de son téléphone (identifiant secret de 20 caractères),
+    // le crée (date du serveur, lui seul dedans) ou s'y ajoute ; rien d'autre ne change, et seul l'admin liste les téléphones
+    match /devices/{id} {
+      allow get: if request.auth != null && id.matches('^[a-z0-9]{20}$');
+      allow list, delete: if false;
+      allow create: if actif() && id.matches('^[a-z0-9]{20}$')
+        && request.resource.data.keys().hasOnly(['first', 'uids'])
+        && request.resource.data.first == request.time
+        && request.resource.data.uids == [request.auth.uid];
+      allow update: if actif()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uids'])
+        && !(request.auth.uid in resource.data.uids)
+        && request.resource.data.uids.hasAll(resource.data.uids)
+        && request.auth.uid in request.resource.data.uids
+        && request.resource.data.uids.size() == resource.data.uids.size() + 1
+        && request.resource.data.uids.size() <= 50;
     }
     // un code ne peut être réclamé qu'une fois (pas de recréation possible)
     match /claims/{code} {
@@ -424,6 +459,10 @@ def chapter_of(sid, text):
     return best
 
 
+def _cle_q(q):
+    return re.sub(r"[\s.,;:!?…'’\"«»_\-–—]", "", q.lower())
+
+
 def build():
     questions, subjects = [], []
     for sid, levels, name, items in SUBJECTS:
@@ -431,6 +470,8 @@ def build():
         # QCM rangés par chapitre : le chapitre est imposé
         force = {q: t for t, qs in QCM_CH.get(sid, {}).items() for q, *_ in qs}
         items = items + [x for qs in QCM_CH.get(sid, {}).values() for x in qs]
+        # pas deux fois la même question dans une matière, même si seuls les espaces ou la ponctuation changent
+        _vus = set(); items = [x for x in items if not (_cle_q(x[0]) in _vus or _vus.add(_cle_q(x[0])))]
         fams = {f"{c} {f}" for c in SERIES for f in set(FAMILIES.values())}
         assert set(levels) <= set(LEVELS) | fams, (sid, levels)
         subjects.append({"id": sid, "levels": levels, "name": name, "count": len(items), "free": min(FREE, len(items)), "fiche": sid in FICHES, "notions": len(NOTIONS.get(sid, []))})
