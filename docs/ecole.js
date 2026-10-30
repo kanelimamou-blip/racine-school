@@ -76,7 +76,7 @@ const Ecole = (() => {
     return (cfgCache = { ...c, classes: c.classes.map((x) => ({ ...x, id: x.id || slugClasse(x.nom) })) });
   }
   async function setConfig(c) {
-    cfgCache = c; L.config = c; keep();
+    cfgCache = c; L.config = c; keep(); journal("Réglages de l'école modifiés");
     if (online()) await db().collection("ecole").doc("config").set(c);
   }
   async function saveFiche(f) {
@@ -102,6 +102,7 @@ const Ecole = (() => {
   // chaque paiement reçoit un numéro de reçu (mois de l'encaissement + 5 caractères) et garde le montant et qui l'a encaissé
   async function payer(id, mois, paye, montant = 0) {
     const val = paye ? { le: today(), recu: numeroRecu(), montant, par: S.staffNom || "" } : null;
+    journal(`${paye ? "Paiement enregistré" : "Paiement annulé"} : ${mois === "inscription" ? "inscription" : moisNom(mois)}, élève ${id}${paye ? ` (${fcfa(montant)}, reçu ${val.recu})` : ""}`);
     if (shared()) await db().collection("paiements").doc(id).set({ [mois]: val || firebase.firestore.FieldValue.delete() }, { merge: true });
     else { const p = { ...(L.paiements || {})[id] }; if (val) p[mois] = val; else delete p[mois]; L.paiements = { ...(L.paiements || {}), [id]: p }; keep(); }
   }
@@ -128,7 +129,13 @@ const Ecole = (() => {
     if (online()) await db().collection("staff").doc(myId()).set({ role, cle, nom, classes });
     await ecrire("annuaire", myId(), { nom, role, tel }).catch(() => {});
   }
+  // historique des modifications sensibles, visible par la direction
+  function journal(quoi) {
+    if (!S.role || S.role === "eleve" || S.role === "parent") return;
+    ecrire("journal", null, { quoi, qui: S.staffNom || "", par: myId(), at: new Date().toISOString() }).catch(() => {});
+  }
   async function retirerAcces(uid) {
+    journal(`Accès retiré : ${uid}`);
     await effacer("annuaire", uid);
     if (shared()) await db().collection("staff").doc(uid).delete().catch(() => {});
   }
@@ -153,6 +160,7 @@ const Ecole = (() => {
   }
   // Notes : une évaluation par document ; en ligne, chaque élève a aussi son relevé (lu par lui et ses parents, sans les notes des autres)
   async function sauverEvaluation(id, ev, eleveIds) {
+    journal(`Notes ${id ? "modifiées" : "saisies"} : ${ev.matiere || ""} ${ev.classe || ""} ${ev.titre || ""}`.trim());
     id = await ecrire("notes", id, ev);
     if (shared()) {
       const b = db().batch(), FV = firebase.firestore.FieldValue;
@@ -333,6 +341,25 @@ const Ecole = (() => {
     D(7, { type: "signalement", role: "eleve", anonyme: true, parNom: "", classe: "4e B", texte: "Des grands de 3e prennent le goûter des petits à la récréation." });
     mettre("absprofs", "demo-ab0", { profNom: "M. Ousmane Sarr", date: today(), motif: "Raison de santé", remplacant: "", classes: "6e A, 5e C", par: "demo" });
     mettre("absprofs", "demo-ab1", { profNom: "Mme Khady Fall", date: t(3), motif: "Formation à l'inspection", remplacant: "Mme Aminata Diallo", classes: "4e B, 3e A", par: "demo" });
+    D(8, { type: "paiement", role: "parent", ...ref(17), cid: el(17).classeId, parNom: el(17).parent, mois: ceMois(), montant: montantDu(cfg, el(17), ceMois()), ref: "WAV-" + (481516 + 2342), texte: "" });
+    // communication : sondage, discussions, documents, historique
+    mettre("sondages", "demo-s0", { question: "Êtes-vous satisfaits de la communication de l'école ce trimestre ?", options: ["Très satisfait", "Satisfait", "Peu satisfait", "Pas satisfait"], cible: "parents", clos: false, par: "demo", le: t(-3) });
+    mettre("sondages", "demo-s1", { question: "Quel jour pour la journée culturelle ?", options: ["Vendredi 12", "Samedi 13", "Vendredi 19"], cible: "tous", clos: false, par: "demo", le: t(-1) });
+    ids.slice(0, 64).forEach((id, i) => mettre("votes", `demo-s${i % 3 ? 0 : 1}_${id}`, { sondage: `demo-s${i % 3 ? 0 : 1}`, choix: i % 3 ? pick(["Très satisfait", "Satisfait", "Satisfait", "Peu satisfait", "Pas satisfait"]) : pick(["Vendredi 12", "Samedi 13", "Vendredi 19"]), par: id, le: t(-1) }));
+    const c0 = cfg.classes[0], at = (j, h) => `${t(j)}T${h}:00`;
+    [["equipe", "Mme Aminata Diallo", "Bonjour à tous, la réunion pédagogique est maintenue jeudi à 16 h en salle des professeurs.", at(-2, "08:12")],
+      ["equipe", "M. Lamine Kane", "Les cartouches d'encre sont arrivées, passez au secrétariat pour vos tirages.", at(-1, "10:40")],
+      ["profs", "M. Ousmane Sarr", "Qui a encore le corrigé du devoir commun de 3e ? Je n'arrive pas à le retrouver.", at(-1, "17:05")],
+      ["profs", "Mme Khady Fall", "Je l'ai, je le mets dans Documents ce soir.", at(-1, "17:20")],
+      [c0.id, "Mme Aminata Diallo", `Bonjour la ${c0.nom}, n'oubliez pas vos compas demain pour la géométrie.`, at(-1, "18:00")],
+      [c0.id, `${el(0).prenom} ${el(0).nom}`, "D'accord madame, merci !", at(-1, "18:30")]].forEach(([canal, nom, texte, at2], i) => mettre("messages", "demo-m" + i, { canal, nom, texte, at: at2, par: "demo", role: "prof" }));
+    [["Règlement intérieur 2026-2027", "Règlement et circulaires", "tous", "https://drive.google.com"], ["Liste des fournitures de 6e", "Liste de fournitures", "parents", "https://drive.google.com"],
+      ["Cours : les fractions", "Support de cours", c0.id, "https://www.youtube.com"], ["Corrigé du devoir commun de 3e", "Ressource pour les professeurs", "profs", "https://drive.google.com"]]
+      .forEach(([titre, categorie, cible, lien], i) => mettre("documents", "demo-doc" + i, { titre, categorie, cible, lien, fichier: "", par: "demo", parNom: ["La direction", "La direction", "Mme Aminata Diallo", "Mme Khady Fall"][i], le: t(-i - 1) }));
+    [["Paiement enregistré : " + moisNom(ceMois()) + `, élève ${el(3).prenom} ${el(3).nom}`, "M. Lamine Kane", at(0, "09:14")], ["Notes saisies : Mathématiques " + c0.nom + " Devoir 1", "Mme Aminata Diallo", at(-1, "19:02")],
+      ["Paiement annulé : " + moisNom(ceMois()) + `, élève ${el(9).prenom} ${el(9).nom}`, "M. Lamine Kane", at(-2, "11:30")], ["Réglages de l'école modifiés", "Direction", at(-4, "08:00")]]
+      .forEach(([quoi, qui, at2], i) => mettre("journal", "demo-j" + i, { quoi, qui, at: at2, par: "demo" }));
+    Object.keys(col.annonces || {}).forEach((a, j) => ids.slice(0, 20 + j * 9).forEach((id, i) => mettre("lectures", `${a}_${id}`, { annonce: a, par: id, le: t(-1), present: i % 3 === 0 })));
     L.col = col;
     L.paiements = pay; L.demo = true; keep();
   }
@@ -475,20 +502,20 @@ function ficheCard() {
   if (S.role !== "eleve" || !S.fiche) return "";
   const f = S.fiche;
   return `<div class="card lib-card fiche-card"><a class="row" style="justify-content:flex-start;text-decoration:none;color:inherit" href="#inscription">${avatar(f)}<span class="grow"><b>${esc(nomComplet(f))}</b><br><span class="small muted">${esc(f.classe)} · Racine School</span></span></a>
-    <span class="row" style="gap:6px"><a class="btn alt small" href="#carte">🪪 Ma carte</a><a class="btn alt small" href="#notes">📑 Mes notes</a><a class="btn alt small" href="#demandes">✉️ Questions</a></span></div>`;
+    <span class="row" style="gap:6px"><a class="btn alt small" href="#carte">🪪 Ma carte</a><a class="btn alt small" href="#notes">📑 Mes notes</a><a class="btn alt small" href="#demandes">✉️ Questions</a><a class="btn alt small" href="#messages">💬 Ma classe</a><a class="btn alt small" href="#documents">📂 Documents</a></span></div>`;
 }
 
 // ---------- Espace école (équipe et parents)
 const ONGLETS = {
-  directeur: [["", "Tableau"], ["eleves", "Élèves"], ["paiements", "Paiements"], ["bulletins", "Bulletins"], ["edt", "Emploi du temps"], ["programme", "Programme"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["demandes", "Demandes"], ["registres", "Registres"], ["equipe", "Équipe"], ["reglages", "Réglages"]],
-  prof: [["", "Mes classes"], ["appel", "Appel"], ["notes", "Notes"], ["programme", "Programme"], ["quiz", "Quiz en classe"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["demandes", "Demandes"], ["registres", "Registres"], ["equipe", "Annuaire"]],
-  surveillant: [["", "Aujourd'hui"], ["portail", "Portail"], ["eleves", "Élèves"], ["demandes", "Demandes"], ["registres", "Registres"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
-  personnel: [["", "Caisse"], ["eleves", "Élèves"], ["demandes", "Demandes"], ["registres", "Registres"], ["annonces", "Annonces"], ["equipe", "Annuaire"]],
-  parent: [["", "Mon enfant"], ["demandes", "Démarches"], ["annonces", "Annonces"]],
+  directeur: [["", "Tableau"], ["eleves", "Élèves"], ["paiements", "Paiements"], ["bulletins", "Bulletins"], ["edt", "Emploi du temps"], ["programme", "Programme"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["messages", "Messages"], ["documents", "Documents"], ["demandes", "Demandes"], ["registres", "Registres"], ["equipe", "Équipe"], ["reglages", "Réglages"]],
+  prof: [["", "Mes classes"], ["appel", "Appel"], ["notes", "Notes"], ["programme", "Programme"], ["quiz", "Quiz en classe"], ["devoirs", "Devoirs"], ["annonces", "Annonces"], ["messages", "Messages"], ["documents", "Documents"], ["demandes", "Demandes"], ["registres", "Registres"], ["equipe", "Annuaire"]],
+  surveillant: [["", "Aujourd'hui"], ["portail", "Portail"], ["eleves", "Élèves"], ["demandes", "Demandes"], ["registres", "Registres"], ["annonces", "Annonces"], ["messages", "Messages"], ["documents", "Documents"], ["equipe", "Annuaire"]],
+  personnel: [["", "Caisse"], ["eleves", "Élèves"], ["demandes", "Demandes"], ["registres", "Registres"], ["annonces", "Annonces"], ["messages", "Messages"], ["documents", "Documents"], ["equipe", "Annuaire"]],
+  parent: [["", "Mon enfant"], ["demandes", "Démarches"], ["annonces", "Annonces"], ["documents", "Documents"]],
 };
 const TITRES = { directeur: "Direction", prof: "Espace professeur", surveillant: "Vie scolaire", personnel: "Administration", parent: "Espace parent" };
 // pages ouvertes depuis une autre (fiche d'un élève, reçu, certificat), selon le profil
-const SOUS_PAGES = { directeur: ["eleve", "recu", "certificat", "notes", "bulletin", "registre", "convocation"], prof: ["eleve", "eleves", "bulletins", "bulletin", "registre"], surveillant: ["eleve", "registre", "convocation"], personnel: ["eleve", "recu", "certificat", "paiements", "registre"], parent: ["recu", "bulletin"] };
+const SOUS_PAGES = { directeur: ["eleve", "recu", "certificat", "notes", "bulletin", "registre", "convocation", "journal", "rapport", "cloture", "parents"], prof: ["eleve", "eleves", "bulletins", "bulletin", "registre", "parents"], surveillant: ["eleve", "registre", "convocation"], personnel: ["eleve", "recu", "certificat", "paiements", "registre", "cloture"], parent: ["recu", "bulletin"] };
 const ongletsEcole = (actif) => `<div class="row onglets noprint">${(ONGLETS[S.role] || []).map(([k, l]) => `<a class="btn alt small${k === actif ? " on" : ""}" href="#ecole${k ? "/" + k : ""}">${l}</a>`).join("")}</div>`;
 async function viewEcole() {
   const [, sub = "", arg = "", arg2 = ""] = location.hash.slice(1).split("/").map(decodeURIComponent);
@@ -503,14 +530,15 @@ async function viewEcole() {
       equipe && role !== "personnel" ? Ecole.lire("portail", today()).catch(() => null) : null, equipe ? Ecole.liste("annuaire").catch(vide) : []]);
     const ctx = { cfg, eleves: rattacher(cfg, eleves).sort((a, b) => (a.nom + a.prenom).localeCompare(b.nom + b.prenom)), devoirs: rattacher(cfg, devoirs), pay,
       annonces: annonces.sort((a, b) => String(b.le).localeCompare(String(a.le))), appels, portail: (portail && portail.retards) || {}, annuaire };
-    const actif = { eleve: "eleves", recu: role === "parent" ? "" : "paiements", certificat: "eleves", registre: "registres", convocation: "", bulletin: { parent: "", prof: "notes" }[role] ?? "bulletins", bulletins: role === "prof" ? "notes" : "bulletins", notes: role === "prof" ? "notes" : "bulletins" }[sub] ?? sub;
+    const actif = { eleve: "eleves", recu: role === "parent" ? "" : "paiements", certificat: "eleves", registre: "registres", convocation: "", bulletin: { parent: "", prof: "notes" }[role] ?? "bulletins", bulletins: role === "prof" ? "notes" : "bulletins", notes: role === "prof" ? "notes" : "bulletins", journal: "registres", rapport: "", cloture: "", parents: "" }[sub] ?? sub;
     const head = `<div class="row noprint"><h1>${titre}</h1><span class="small muted">${role === "parent" ? "" : esc(S.staffNom || "")}</span></div>
       ${Ecole.isDemo ? `<p class="demo small noprint">Démonstration : élèves et équipe fictifs. ${role === "directeur" ? `<button class="linkbtn" id="demo-off">Effacer la démo</button>` : ""}</p>` : ""}${ongletsEcole(actif)}`;
     const views = {
       "": { directeur: vueEnsemble, prof: vueProfAccueil, surveillant: vueAujourdhuiComplet, personnel: vueCaisse, parent: vueParent }[role],
-      eleves: vueEleves, eleve: vueFiche, paiements: vuePaiementsComplet, registres: vueRegistres, registre: vueRegistre, demandes: vueDemandes, convocation: vueConvocation, devoirs: vueDevoirs, reglages: vueReglages,
+      eleves: vueEleves, eleve: vueFicheComplete, paiements: vuePaiementsComplet, registres: vueRegistres, registre: vueRegistre, demandes: vueDemandes, convocation: vueConvocation, devoirs: vueDevoirs, reglages: vueReglages,
       annonces: vueAnnonces, equipe: vueEquipeComplete, edt: vueEdt, programme: vueProgramme, appel: vueAppel, quiz: vueQuiz, portail: vuePortail, recu: vueRecu, certificat: vueCertificat,
       notes: vueNotes, bulletins: vueBulletins, bulletin: vueBulletin,
+      messages: vueMessages, documents: vueDocuments, journal: vueJournal, rapport: vueRapport, cloture: vueCloture, parents: vueParentsClasse,
     };
     $view.innerHTML = head + (await views[sub](ctx, arg, arg2));
     const off = document.getElementById("demo-off");
@@ -520,6 +548,7 @@ async function viewEcole() {
     quitter();
     const b = sub === "" ? bindEcole["accueil-" + role] || bindEcole[""] : bindEcole[sub];
     b && b(ctx, arg, arg2);
+    verifierNouveautes().catch(() => {});
   } catch (e) {
     console.error(e);
     $view.innerHTML = `<h1>${titre}</h1><div class="card"><p>Impossible de charger les données de l'école. Vérifie ta connexion puis réessaie.</p><a class="btn" href="#ecole">Réessayer</a></div>
@@ -639,7 +668,8 @@ function vueReglages(ctx) {
   return `<div class="card"><h2>Année scolaire</h2>
       <label class="small">Année<input class="field" id="annee" value="${esc(cfg.annee)}" maxlength="9"></label>
       <div class="row"><label class="small" style="flex:1">Premier mois<input class="field" type="month" id="debut" value="${cfg.debut}"></label><label class="small" style="flex:1">Dernier mois<input class="field" type="month" id="fin" value="${cfg.fin}"></label></div>
-      <label class="small">Frais d'inscription (FCFA)<input class="field" type="number" id="insc" value="${cfg.inscription}" min="0" step="500"></label></div>
+      <label class="small">Frais d'inscription (FCFA)<input class="field" type="number" id="insc" value="${cfg.inscription}" min="0" step="500"></label>
+      <label class="small">Numéro Wave ou Orange Money de l'école (pour les paiements à distance)<input class="field" id="wave" value="${esc(cfg.wave || "")}" maxlength="20" placeholder="77 000 00 00"></label></div>
     <div class="card"><h2>Mensualités (FCFA)</h2>${DATA.classes.map((n) => `<label class="row small">${n}<input class="field mens" style="max-width:140px" type="number" data-n="${n}" value="${cfg.mensualites[n] || 0}" min="0" step="500"></label>`).join("")}</div>
     <div class="card"><h2>Coefficients des matières</h2><p class="small muted">Utilisés pour la moyenne générale des bulletins (1 par défaut).</p>
       ${[...new Set(DATA.subjects.filter((x) => !/annales/.test(x.id)).map((x) => x.name))].sort((a, b) => a.localeCompare(b, "fr")).map((n) => `<label class="row small">${esc(n)}<input class="field coef" style="max-width:90px" type="number" data-n="${esc(n)}" value="${(cfg.coefs || {})[n] || 1}" min="0.5" max="10" step="0.5"></label>`).join("")}</div>
@@ -664,7 +694,8 @@ function vueClassesProf(ctx) {
       <div class="chips">${cfg.classes.map((c) => `<label class="chip"><input type="checkbox" class="pc" value="${esc(c.id)}"${mine.includes(c.id) ? " checked" : ""}> ${esc(c.nom)}</label>`).join("")}</div></div>
     ${cfg.classes.filter((c) => mine.includes(c.id)).map(({ id, nom: c }) => { const l = eleves.filter((f) => f.cid === id), a = l.filter((f) => reussite(f) !== null);
       return `<div class="card"><div class="row"><h2>${esc(c)}</h2><span class="small muted">${l.length} élève${l.length > 1 ? "s" : ""}${a.length ? ` · ${Math.round(a.reduce((n, f) => n + reussite(f), 0) / a.length)} % réussite` : ""}</span></div>
-        ${l.map((f) => ligneEleve(ctx, f)).join("") || `<p class="small muted">Aucun élève inscrit pour l'instant.</p>`}</div>`; }).join("")}
+        ${l.map((f) => ligneEleve(ctx, f)).join("") || `<p class="small muted">Aucun élève inscrit pour l'instant.</p>`}
+        ${l.length ? `<a class="btn alt small" href="#ecole/parents/${encodeURIComponent(id)}">✉️ Écrire aux parents de la classe</a> <a class="btn alt small" href="#ecole/messages/${encodeURIComponent(id)}">💬 Discussion de la classe</a>` : ""}</div>`; }).join("")}
     ${!ctx.eleves.length ? `<button class="btn alt" id="demo-on">Voir une démonstration avec des élèves fictifs</button>` : ""}
     <button class="btn alt" id="quit">Changer de profil sur ce téléphone</button>`;
 }
@@ -722,7 +753,7 @@ const bindEcole = {
       $view.querySelectorAll(".classe-edit").forEach((d) => { const c = cfg.classes[+d.dataset.i]; if (c) cfg.classes[+d.dataset.i] = { ...c, nom: d.querySelector(".cn").value.trim() || c.nom, level: d.querySelector(".clv").value }; });
       $view.querySelectorAll(".mens").forEach((i) => { cfg.mensualites[i.dataset.n] = +i.value || 0; });
       cfg.coefs = { ...(cfg.coefs || {}) }; $view.querySelectorAll(".coef").forEach((i) => { cfg.coefs[i.dataset.n] = +i.value || 1; });
-      return { ...cfg, classes: cfg.classes.filter(Boolean), annee: v("annee").trim() || cfg.annee, debut: v("debut") || cfg.debut, fin: v("fin") || cfg.fin, inscription: +v("insc") || 0 };
+      return { ...cfg, classes: cfg.classes.filter(Boolean), annee: v("annee").trim() || cfg.annee, debut: v("debut") || cfg.debut, fin: v("fin") || cfg.fin, inscription: +v("insc") || 0, wave: v("wave").trim() };
     };
     document.getElementById("cadd").onclick = async () => {
       const cur = lire(), existe = new Set(cur.classes.map((c) => c.nom.toLowerCase()));

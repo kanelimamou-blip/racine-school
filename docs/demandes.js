@@ -17,6 +17,11 @@ const DEMANDES = {
     champs: [["avec", "Avec", "select", ["La direction", "Le professeur principal", "La vie scolaire"]], ["date", "Date souhaitée", "date"], ["texte", "À quel sujet ?", "textarea"]], resume: (x) => `${x.avec} · souhaité le ${dateFr(x.date)}` },
   question: { titre: "Poser une question à un professeur", ico: "❓", de: ["eleve"], pour: ["prof"], anonyme: true,
     champs: [["matiere", "Matière", "matiere"], ["texte", "Ta question", "textarea"]], resume: (x) => x.matiere || "" },
+  paiement: { titre: "J'ai payé par Wave ou Orange Money", ico: "📲", de: ["parent"], pour: ["personnel", "directeur"], enfant: true, photo: "📷 Joindre la capture du paiement",
+    aide: (cfg) => `Payez la scolarité ${cfg.wave ? `au <b>${esc(cfg.wave)}</b> (Wave ou Orange Money)` : "par Wave ou Orange Money au numéro donné par l'école"}, puis envoyez la capture : la caisse vérifie et votre reçu apparaît dans l'appli.`,
+    champs: [["mois", "Pour quel mois", "select", (cfg) => moisEchus(cfg).concat(ceMois() < cfg.fin ? [isoDay(addDays(new Date(ceMois() + "-15T12:00"), 31)).slice(0, 7)] : []).map((m) => [m, m === "inscription" ? "Inscription" : moisNom(m)])],
+      ["montant", "Montant payé (FCFA)", "number"], ["ref", "Référence de la transaction", "text"], ["texte", "Message (facultatif)", "textarea"]],
+    resume: (x) => `${x.mois === "inscription" ? "Inscription" : moisNom(x.mois)} · ${fcfa(+x.montant || 0)}${x.ref ? " · réf. " + x.ref : ""}` },
   signalement: { titre: "Signaler un problème (confidentiel)", ico: "🛟", de: ["eleve", "parent"], pour: ["directeur"], anonyme: true,
     champs: [["texte", "Que se passe-t-il ?", "textarea"]], resume: () => "Signalement confidentiel" },
 };
@@ -66,18 +71,18 @@ async function vueDemandes(ctx) {
     ${types.length ? `<h2>Mes demandes</h2>${miennes.map((x) => carteDemande(x)).join("") || `<p class="small muted">Aucune demande envoyée.</p>`}` : ""}`;
 }
 async function formDemande(ctx, type) {
-  const d = DEMANDES[type], zone = document.getElementById("dform");
+  const d = DEMANDES[type], zone = document.getElementById("dform"), cfg = await Ecole.config();
   let enfants = [];
   if (d.enfant) enfants = (await Promise.all((S.enfants || []).map((id) => Ecole.enfant(id).catch(() => null)))).filter(Boolean).map((e) => ({ ...e.fiche, id: e.fiche.id || "" }));
   if (d.enfant && !enfants.length) { zone.innerHTML = `<p class="msg-ko small">Reliez d'abord votre enfant dans « Mon enfant ».</p>`; return; }
   const champ = ([k, label, type, opts]) => type === "textarea" ? `<label class="small">${label}<textarea class="field" id="df-${k}" rows="3" maxlength="800"></textarea></label>`
-    : type === "select" ? `<label class="small">${label}<select class="field" id="df-${k}">${opts.map((o) => `<option>${o}</option>`).join("")}</select></label>`
+    : type === "select" ? `<label class="small">${label}<select class="field" id="df-${k}">${(typeof opts === "function" ? opts(cfg) : opts).map((o) => (Array.isArray(o) ? `<option value="${esc(o[0])}">${esc(o[1])}</option>` : `<option>${o}</option>`)).join("")}</select></label>`
     : type === "matiere" ? `<label class="small">${label}<select class="field" id="df-${k}">${subjectsOf(S.level || "6e").filter((s) => !/annales/.test(s.id)).map((s) => `<option>${esc(s.name)}</option>`).join("")}</select></label>`
     : `<label class="small">${label}<input class="field" id="df-${k}" type="${type}" ${type === "date" ? `value="${today()}"` : 'maxlength="80"'}></label>`;
   zone.innerHTML = `<div class="card"><h2>${d.ico} ${d.titre}</h2>
     ${d.enfant ? `<label class="small">Enfant<select class="field" id="df-enfant">${enfants.map((f, i) => `<option value="${i}">${esc(nomComplet(f))} (${esc(f.classe)})</option>`).join("")}</select></label>` : ""}
-    ${d.champs.map(champ).join("")}
-    ${d.photo ? `<label class="btn alt small">📷 Joindre une photo du justificatif<input type="file" id="df-photo" accept="image/*" hidden></label><span id="df-ph" class="small muted"></span>` : ""}
+    ${d.aide ? `<p class="small muted">${d.aide(cfg)}</p>` : ""}${d.champs.map(champ).join("")}
+    ${d.photo ? `<label class="btn alt small">${d.photo === true ? "📷 Joindre une photo du justificatif" : d.photo}<input type="file" id="df-photo" accept="image/*" hidden></label><span id="df-ph" class="small muted"></span>` : ""}
     ${d.signature ? `<label class="row small"><input type="checkbox" id="df-signe"> ${d.signature}</label>` : ""}
     ${d.anonyme ? `<label class="row small"><input type="checkbox" id="df-anon"> Envoyer sans mon nom</label>` : ""}
     <button class="btn" id="df-ok">Envoyer</button><p id="df-msg" class="small"></p></div>`;
@@ -86,7 +91,7 @@ async function formDemande(ctx, type) {
   if (ph) ph.onchange = async (e) => { const f = e.target.files[0]; if (!f) return; photo = await photoDocument(f).catch(() => ""); document.getElementById("df-ph").textContent = photo ? " Photo jointe ✓" : " La photo n'a pas pu être lue."; };
   document.getElementById("df-ok").onclick = async (ev) => {
     const btn = ev.currentTarget, msg = document.getElementById("df-msg"), v = (k) => (document.getElementById("df-" + k) || {}).value?.trim() || "";
-    if (!v("texte") && d.champs.some(([k]) => k === "texte") && type !== "autorisation") { msg.className = "msg-ko small"; msg.textContent = "Écrivez quelques mots."; return; }
+    if (!v("texte") && d.champs.some(([k]) => k === "texte") && !["autorisation", "paiement"].includes(type)) { msg.className = "msg-ko small"; msg.textContent = "Écrivez quelques mots."; return; }
     if (d.signature && !document.getElementById("df-signe").checked) { msg.className = "msg-ko small"; msg.textContent = "Cochez la case pour signer l'autorisation."; return; }
     const x = { type, par: Ecole.myId(), parNom: S.role === "eleve" ? nomComplet(S.fiche) : S.role === "parent" ? "Parent" : S.staffNom || "", role: S.role, statut: "attente", le: today(), reponse: "" };
     d.champs.forEach(([k]) => (x[k] = v(k)));
@@ -115,6 +120,8 @@ function lierDemandes(ctx) {
     await Ecole.ecrire("demandes", b.dataset.id, { ...sansId(x), statut: b.dataset.s, reponse: rep, repNom: S.staffNom || "", repLe: today() }).catch(() => {});
     // une dépense acceptée entre dans le registre des dépenses
     if (x.type === "depense" && b.dataset.s === "accepte") await Ecole.ecrire("registres", null, { reg: "depenses", date: today(), libelle: x.libelle, categorie: "Autre", montant: +x.montant || 0, fournisseur: "", par: Ecole.myId(), parNom: `${x.parNom} (validé par ${S.staffNom || "la direction"})`, le: today() }).catch(() => {});
+    // un paiement mobile vérifié par la caisse devient un paiement enregistré, avec son reçu
+    if (x.type === "paiement" && b.dataset.s === "accepte" && x.eleveId && x.mois) await Ecole.payer(x.eleveId, x.mois, true, +x.montant || 0).catch(() => {});
     viewEcole();
   });
 }

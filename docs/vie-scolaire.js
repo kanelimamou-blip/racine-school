@@ -78,27 +78,37 @@ function annoncesPour(list) {
   return list;
 }
 const cibleNom = (cfg, c) => CIBLES[c] || ((classeById(cfg, c) || {}).nom ? `Classe de ${classeById(cfg, c).nom}` : c);
-function ligneAnnonce(cfg, a, { gerer = false } = {}) {
+function ligneAnnonce(cfg, a, { gerer = false, lec = null } = {}) {
   const texte = `📢 Racine School : ${a.titre}${a.date ? ` (${jourFr(a.date)})` : ""}. ${a.texte || ""}`;
+  const moi = lec && lec.moi, present = moi && moi.present;
   return `<div class="card annonce"><div class="row"><b>${esc(a.titre)}</b>${gerer ? `<button class="btn alt small rma" data-id="${esc(a.id)}" aria-label="Supprimer">✕</button>` : ""}</div>
     ${a.date ? `<p class="small"><span class="badge ok">🗓️ ${jourFr(a.date)}</span></p>` : ""}${a.texte ? `<p>${esc(a.texte)}</p>` : ""}
+    ${a.audio ? `<audio controls preload="none" src="${esc(a.audio)}"></audio>` : ""}
     <p class="small muted">${esc(cibleNom(cfg, a.cible))} · ${esc(a.parNom || "La direction")} · publié le ${dateFr(a.le)}</p>
+    ${gerer && lec ? `<p class="small">👁️ Lu par <b>${lec.lus}</b> personne${lec.lus > 1 ? "s" : ""}${a.presence ? ` · ✋ <b>${lec.presents}</b> seront présents` : ""}</p>` : ""}
+    ${!gerer && a.presence ? `<button class="btn ${present ? "" : "alt "}small presence" data-id="${esc(a.id)}">${present ? "✓ Je serai présent" : "✋ Je serai présent"}</button>` : ""}
     ${gerer ? `<a class="small" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(texte)}">Partager dans un groupe WhatsApp</a>` : ""}</div>`;
 }
-function vueAnnonces(ctx) {
-  const { cfg } = ctx, dir = S.role === "directeur", list = annoncesPour(ctx.annonces);
+async function vueAnnonces(ctx) {
+  const { cfg } = ctx, dir = S.role === "directeur", list = annoncesPour(ctx.annonces), moi = Ecole.myId();
   const avenir = list.filter((a) => a.date && a.date >= today()).sort((a, b) => a.date.localeCompare(b.date));
+  // accusés de lecture : chacun marque ce qu'il a vu ; la direction voit les compteurs
+  const lectures = dir ? await Ecole.liste("lectures").catch(() => []) : await Ecole.liste("lectures", "par", moi).catch(() => []);
+  for (const a of list) if (!lectures.some((l) => l.annonce === a.id && l.par === moi)) Ecole.ecrire("lectures", `${a.id}_${moi}`, { annonce: a.id, par: moi, le: today(), present: false }).catch(() => {});
+  const lec = (a) => { const l = lectures.filter((x) => x.annonce === a.id); return { lus: l.length, presents: l.filter((x) => x.present).length, moi: l.find((x) => x.par === moi) }; };
   return `${dir ? `<div class="card"><h2>Publier une annonce</h2>
       <input class="field" id="atitre" maxlength="80" placeholder="Titre (ex. : Réunion des parents)">
       <textarea class="field" id="atexte" rows="3" maxlength="500" placeholder="Détails"></textarea>
       <label class="small">Pour<select class="field" id="acible">${Object.entries(CIBLES).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}
         <optgroup label="Une classe">${cfg.classes.map((c) => `<option value="${esc(c.id)}">${esc(c.nom)}</option>`).join("")}</optgroup></select></label>
       <label class="small">Date de l'événement (facultatif, l'annonce entre alors au calendrier)<input class="field" type="date" id="adate"></label>
-      <button class="btn" id="apub">Publier</button><p id="amsg" class="small"></p></div>` : ""}
+      <label class="row small"><input type="checkbox" id="apres"> Demander qui sera présent (réunion, sortie…)</label>
+      ${window.MediaRecorder ? `<button class="btn alt small" id="avoc" type="button">🎙️ Enregistrer un message vocal (1 min au plus)</button><span id="avocmsg" class="small muted"></span>` : ""}
+      <button class="btn" id="apub">Publier</button><p id="amsg" class="small"></p></div>${await sondagesCarte(ctx)}` : await sondagesCarte(ctx)}
     <div class="card"><h2>🗓️ Calendrier de l'école</h2>${avenir.map((a) => `<div class="row small cal"><span><b>${esc(a.titre)}</b><br><span class="muted">${esc(cibleNom(cfg, a.cible))}</span></span><span class="badge ok">${new Date(a.date + "T12:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}</span></div>`).join("") || `<p class="small muted">Aucun événement à venir.</p>`}</div>
-    <h2>Annonces</h2>${list.map((a) => ligneAnnonce(cfg, a, { gerer: dir })).join("") || `<p class="muted">Aucune annonce pour l'instant.</p>`}`;
+    ${"Notification" in window && Notification.permission === "default" ? `<button class="btn alt small" id="notif-on">🔔 Recevoir une notification quand une annonce arrive</button>` : ""}
+    <h2>Annonces</h2>${list.map((a) => ligneAnnonce(cfg, a, { gerer: dir, lec: lec(a) })).join("") || `<p class="muted">Aucune annonce pour l'instant.</p>`}`;
 }
-
 // ---------- Annuaire de l'équipe ; la direction y retire les accès
 function vueEquipe(ctx) {
   const dir = S.role === "directeur", moi = Ecole.myId();
@@ -172,7 +182,8 @@ function vueCaisse(ctx) {
   const total = jour.reduce((n, j) => n + (j.x.montant || 0), 0);
   return `<div class="card"><h2>Encaisser un paiement</h2><input class="field" id="cq" placeholder="Nom de l'élève…" autocomplete="off"><div id="cres"></div></div>
     <div class="card"><div class="row"><h2>Encaissé aujourd'hui</h2><b class="ok-txt">${fcfa(total)}</b></div>
-      ${jour.map(({ f, m, x }) => `<a class="lib eleve" href="#ecole/recu/${encodeURIComponent(f.id)}/${m}">${avatar(f)}<span class="grow"><b>${esc(nomComplet(f))}</b><br><span class="small muted">${esc(f.classe)} · ${moisNom(m)} · reçu ${esc(x.recu || "")}</span></span><b class="small">${fcfa(x.montant || 0)}</b></a>`).join("") || `<p class="small muted">Aucun paiement aujourd'hui.</p>`}</div>
+      ${jour.map(({ f, m, x }) => `<a class="lib eleve" href="#ecole/recu/${encodeURIComponent(f.id)}/${m}">${avatar(f)}<span class="grow"><b>${esc(nomComplet(f))}</b><br><span class="small muted">${esc(f.classe)} · ${moisNom(m)} · reçu ${esc(x.recu || "")}</span></span><b class="small">${fcfa(x.montant || 0)}</b></a>`).join("") || `<p class="small muted">Aucun paiement aujourd'hui.</p>`}
+      <a class="btn alt small" href="#ecole/cloture">🔒 Clôture de caisse du jour</a></div>
     <div class="btns"><a class="btn alt" href="#ecole/paiements">Voir les retards de paiement</a><a class="btn alt" href="#ecole/eleves">Listes, certificats et export Excel</a></div>
     ${!eleves.length ? `<p class="muted">Aucun élève inscrit pour l'instant. La direction peut charger une démonstration depuis son tableau de bord.</p>` : ""}`;
 }
@@ -271,6 +282,7 @@ async function viewCarte() {
 async function remplirAccueilEleve() {
   const el = document.getElementById("ecole-accueil");
   if (!el || S.role !== "eleve" || !S.fiche) return;
+  verifierNouveautes().catch(() => {});
   const [annonces, seances, edt] = await Promise.all([Ecole.liste("annonces").catch(() => []), Ecole.liste("seances", "cid", S.fiche.classeId).catch(() => []), edtDuJour().catch(() => "")]);
   const recent = (d) => (new Date(today()) - new Date(d)) / 864e5 <= 3;
   const vus = seances.filter((s) => recent(s.date)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
@@ -284,12 +296,33 @@ async function remplirAccueilEleve() {
 Object.assign(bindEcole, {
   annonces: (ctx) => {
     $view.querySelectorAll(".rma").forEach((b) => b.onclick = async () => { await Ecole.effacer("annonces", b.dataset.id).catch(() => {}); viewEcole(); });
+    $view.querySelectorAll(".presence").forEach((b) => b.onclick = async () => {
+      const moi = Ecole.myId(), id = `${b.dataset.id}_${moi}`, l = await Ecole.lire("lectures", id).catch(() => null);
+      await Ecole.ecrire("lectures", id, { annonce: b.dataset.id, par: moi, le: today(), present: !(l && l.present) }).catch(() => {}); viewEcole();
+    });
+    const n = document.getElementById("notif-on");
+    if (n) n.onclick = () => Notification.requestPermission().then(() => n.remove());
+    lierSondages(ctx);
+    let audio = "";
+    const voc = document.getElementById("avoc");
+    if (voc) voc.onclick = async () => {
+      const info = document.getElementById("avocmsg");
+      if (voc.rec) { voc.rec.stop(); return; }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true }), rec = new MediaRecorder(stream, { audioBitsPerSecond: 16000 }), bouts = [];
+        rec.ondataavailable = (e) => bouts.push(e.data);
+        rec.onstop = () => { stream.getTracks().forEach((t) => t.stop()); voc.rec = null; voc.textContent = "🎙️ Refaire le message vocal";
+          const r = new FileReader(); r.onload = () => { audio = r.result; info.textContent = " Message vocal prêt ✓"; }; r.readAsDataURL(new Blob(bouts, { type: rec.mimeType })); };
+        rec.start(); voc.rec = rec; voc.textContent = "⏹️ Arrêter l'enregistrement"; info.textContent = " Enregistrement…";
+        setTimeout(() => voc.rec === rec && rec.stop(), 60000);
+      } catch { info.textContent = " Le micro n'est pas accessible."; }
+    };
     const pub = document.getElementById("apub");
     if (pub) pub.onclick = async () => {
       const v = (id) => document.getElementById(id).value.trim(), msg = document.getElementById("amsg");
       if (!v("atitre")) { msg.className = "msg-ko small"; msg.textContent = "Écris un titre."; return; }
       pub.disabled = true;
-      await Ecole.ecrire("annonces", null, { titre: v("atitre"), texte: v("atexte"), cible: v("acible"), date: v("adate"), par: Ecole.myId(), parNom: S.staffNom || "La direction", le: today() })
+      await Ecole.ecrire("annonces", null, { titre: v("atitre"), texte: v("atexte"), cible: v("acible"), date: v("adate"), presence: document.getElementById("apres").checked, ...(audio ? { audio } : {}), par: Ecole.myId(), parNom: S.staffNom || "La direction", le: today() })
         .then(() => viewEcole()).catch(() => { pub.disabled = false; msg.className = "msg-ko small"; msg.textContent = "La publication n'a pas abouti."; });
     };
   },
