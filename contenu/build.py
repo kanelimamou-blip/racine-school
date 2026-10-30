@@ -255,6 +255,27 @@ service cloud.firestore {
     match /dossiers/{eleve} {
       allow read, write: if isCaisse();
     }
+    // absences et retards de chaque élève, tenus par l'équipe (appel, portail)
+    match /assiduite/{eleve} {
+      allow read: if signedIn() && (request.auth.uid == eleve || isEquipe() || isParentDe(eleve));
+      allow write: if isEquipe();
+    }
+    // clubs créés par la direction ; chaque élève gère sa propre inscription
+    match /clubs/{id} {
+      allow read: if signedIn();
+      allow write: if isDir();
+    }
+    match /membres/{id} {
+      allow read: if signedIn() && (isEquipe() || resource == null || resource.data.par == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.par == request.auth.uid && id == request.resource.data.club + '_' + request.auth.uid;
+      allow delete: if isDir() || (signedIn() && resource.data.par == request.auth.uid);
+    }
+    // copies rendues en photo : l'élève dépose la sienne tant qu'elle n'est pas corrigée, les professeurs corrigent
+    match /rendus/{id} {
+      allow read: if signedIn() && (isEquipe() || resource == null || resource.data.par == request.auth.uid);
+      allow create, update: if (signedIn() && request.resource.data.par == request.auth.uid && request.resource.data.corrige == false
+          && id == request.resource.data.devoir + '_' + request.auth.uid && (resource == null || resource.data.corrige == false)) || isStaff();
+    }
     // classes, mensualités, année scolaire : réglés par la direction
     match /ecole/{doc} {
       allow read: if signedIn();

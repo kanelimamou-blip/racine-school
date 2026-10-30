@@ -180,7 +180,8 @@ async function vueFicheComplete(ctx, id) {
   const base = vueFiche(ctx, id), f = ctx.eleves.find((x) => x.id === id);
   if (!f) return base;
   const txt = await resumeSemaine(ctx.cfg, f).catch(() => "");
-  return `${base}<div class="card"><h2>Résumé de la semaine</h2><p class="small">${esc(txt)}</p>${boutonParent(f, txt, "Envoyer le résumé au parent")}</div>
+  const pp = (classeById(ctx.cfg, f.cid) || {}).pp;
+  return `${base}${pp ? `<p class="small muted">Professeur principal : ${esc(pp)}</p>` : ""}<div class="card"><h2>Résumé de la semaine</h2><p class="small">${esc(txt)}</p>${boutonParent(f, txt, "Envoyer le résumé au parent")}</div>
     ${estCaisse() ? await dossierCarte(f) : ""}`;
 }
 
