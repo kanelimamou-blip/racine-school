@@ -169,6 +169,7 @@ function genQuestions(sid, n, chapters = null) {
   for (let tries = 0; out.length < n && tries < n * 6; tries++) {
     const [ch, f] = list[Math.floor(Math.random() * list.length)];
     let g; try { g = f(Math.random); } catch (e) { continue; }
+    if (!g) continue;
     const choices = [g.ok, ...g.faux.filter((x) => x !== g.ok)];
     if (choices.length < 4 || new Set(choices).size < 4 || seen.has(g.q)) continue;
     seen.add(g.q);

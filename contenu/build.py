@@ -14,11 +14,18 @@ import secrets
 from pathlib import Path
 
 from annales import ANNALES, GUIDED, HOST
+from sujets_types import MODELE_ANNALES, MODELE_GUIDED
+ANNALES = MODELE_ANNALES + ANNALES
+GUIDED = {**GUIDED, **MODELE_GUIDED}
 from q_plus import EXTRA
 from q_plus_college import EXTRA_COLLEGE
 from q_plus_lycee import EXTRA_LYCEE
 from q_chapitres import CHAPITRE_FORCE, EXTRA_CHAPITRES
 from q_programme import QCM_CH
+from q_svt_plus import QCM_SVT
+for _sid, _chs in QCM_SVT.items():
+    for _t, _qs in _chs.items():
+        QCM_CH.setdefault(_sid, {}).setdefault(_t, []).extend(_qs)
 from fiches import FICHES
 from fiches_autres import FICHES_AUTRES
 from syntheses import SYNTH
@@ -28,12 +35,32 @@ FICHES = {sid: [{"t": t, "cles": pts} for t, pts in f] for sid, f in FICHES.item
 FICHES.update(SYNTH)
 from catalogue import LIBRARY, LIB_HOST
 from catalogue_devoirs import DEVOIRS
+from ressources import RESSOURCES
 from exercices import EXERCISES
 from notions import NOTIONS
 from notions_autres import NOTIONS_AUTRES
 from programmes import PROGRAMMES
 NOTIONS = {**NOTIONS, **NOTIONS_AUTRES}
+# notions qui complètent tout le programme, classe par classe (une par chapitre sans notion)
+import importlib
+for _mod, _var in [("notions_3e", "N3"), ("notions_tle_maths", "NTM"), ("notions_tle_pc", "NTP"), ("notions_tle_autres", "NTA"), ("notions_2nde", "N2"), ("notions_1ere", "N1"), ("notions_g", "NG"), ("notions_6e", "N6"), ("notions_5e", "N5"), ("notions_4e", "N4")]:
+    for _sid, _lst in getattr(importlib.import_module(_mod), _var).items():
+        NOTIONS.setdefault(_sid, []).extend(_lst)
+# matières ajoutées : maths des séries L et G, espagnol LV2
+from matieres_plus import SUBJECTS_PLUS, PROG_PLUS, QCM_PLUS, N_PLUS
+PROGRAMMES.update(PROG_PLUS)
+QCM_CH.update(QCM_PLUS)
+for _sid, _lst in N_PLUS.items():
+    NOTIONS.setdefault(_sid, []).extend(_lst)
+# synthèses chapitre par chapitre là où il n'y avait qu'une fiche générale (gardée en fin de synthèse)
+from syntheses_auto import auto_synth
+from formules import formulaire
+from formulaire import FORMULAIRE
+for _sid, _chs in auto_synth(NOTIONS, PROGRAMMES).items():
+    FICHES[_sid] = _chs + [c for c in FICHES.get(_sid, []) if "p" not in c]
 from questions import CLASSES, FAMILIES, FREE, LEVELS, SERIES, SUBJECTS
+_i = next(i for i, s in enumerate(SUBJECTS) if "annales" in s[0])
+SUBJECTS[_i:_i] = SUBJECTS_PLUS
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT.parent / "docs" / "data"
@@ -399,15 +426,18 @@ def build():
             exercises.append({"id": "ch-" + ch["id"], "levels": subj[sid][1], "subject": subj[sid][2], "free": i == 0, "chapter": ch["id"],
                               "title": ch["title"], "src": "Exercice d'application du cours",
                               "guided": guided("ch-" + ch["id"], [{"title": ch["title"], "context": exo["context"], "steps": exo["steps"]}])})
+    for sid in notions:
+        notions[sid].sort(key=lambda n: n["pch"])
     assert set(PROGRAMMES) <= {s[0] for s in SUBJECTS}
     assert set(EXTRA) | set(EXTRA_COLLEGE) | set(EXTRA_LYCEE) | set(EXTRA_CHAPITRES) | set(QCM_CH) <= {s[0] for s in SUBJECTS} and set(FICHES) <= {s[0] for s in SUBJECTS}
+    assert all(len(v) == len(PROGRAMMES[k]) and all(v) for k, v in FORMULAIRE.items()), "formulaire : un bloc non vide par chapitre"
     for sid, chs in SYNTH.items():
         assert all("p" not in c or 0 <= c["p"] < len(PROGRAMMES[sid]) for c in chs), sid
     for e in LIBRARY + DEVOIRS:
         assert set(e["levels"]) <= set(LEVELS) | fams, e
     hashes = HASHES.read_text().split() if HASHES.exists() else []
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "questions.json").write_text(json.dumps({"classes": CLASSES, "series": SERIES, "families": FAMILIES, "levels": LEVELS, "subjects": subjects, "questions": questions, "annales": ANNALES, "annalesHost": HOST, "library": LIBRARY, "libraryHost": LIB_HOST, "fiches": FICHES, "exercises": exercises, "notions": notions, "devoirs": DEVOIRS, "programmes": {k: [t for t, _ in v] for k, v in PROGRAMMES.items()}}, ensure_ascii=False, separators=(",", ":")))
+    (OUT / "questions.json").write_text(json.dumps({"classes": CLASSES, "series": SERIES, "families": FAMILIES, "levels": LEVELS, "subjects": subjects, "questions": questions, "annales": [{k: v for k, v in a.items() if k not in ("sujet", "corrige")} for a in ANNALES], "fiches": FICHES, "exercises": exercises, "notions": notions,  "programmes": {k: [t for t, _ in v] for k, v in PROGRAMMES.items()}, "formules": formulaire(FICHES, notions, PROGRAMMES, FORMULAIRE)}, ensure_ascii=False, separators=(",", ":")))
     cles = json.loads(CLES.read_text()) if CLES.exists() else {}
     (OUT / "config.json").write_text(json.dumps({**CONFIG, "salt": SALT, "codes": hashes, "cles": cles}, ensure_ascii=False, separators=(",", ":")))
     print(f"{len(questions)} questions, {len(subjects)} matières, {len(hashes)} codes")

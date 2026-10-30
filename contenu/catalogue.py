@@ -1,3 +1,4 @@
+# RÉFÉRENCES (non publiées dans l'appli depuis le 2026-10-30) : sujets officiels dont s'inspire le contenu maison.
 # Bibliothèque d'annales : vrais sujets du BFEM et du BAC (Sénégal), avec le lien vers la page qui les héberge.
 # Relevé sur le catalogue d'epreuvesetcorriges.com. Chaque entrée : (examen, année, matière, séries, niveaux, chemin).
 

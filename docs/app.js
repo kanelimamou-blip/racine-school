@@ -92,19 +92,26 @@ function viewLevel() {
 // ---------- Accueil
 const notionsOf = (level) => subjectsOf(level).flatMap((s) => ((DATA.notions || {})[s.id] || []).map((c) => ({ ...c, sid: s.id, sname: s.name })));
 const exercisesOf = (level) => (DATA.exercises || []).filter((e) => matches(e.levels, level));
+// Exercices et sujets types fabriqués à la demande (exos_gen.js) : nombres nouveaux à chaque essai
+const genExosOf = (level) => (typeof EXGEN === "undefined" ? [] : subjectsOf(level).flatMap((s) => (EXGEN[s.id] || []).map((t, k) => ({ id: `gx-${s.id}-${k}`, subject: s.name, title: t.t }))));
+const genSujetsOf = (level) => (typeof EXGEN === "undefined" ? [] : subjectsOf(level).filter((s) => (EXGEN[s.id] || []).length >= 3).map((s) => ({ id: `gs-${s.id}`, subject: s.name })));
 function rubriques() {
-  const nAnn = annalesOf(S.level).length + libraryOf(S.level).length + devoirsOf(S.level).length, nEx = exercisesOf(S.level).length + annalesOf(S.level).filter((a) => a.guided).length;
+  const nAnn = annalesOf(S.level).length, nGs = genSujetsOf(S.level).length, nGx = genExosOf(S.level).length, nEx = exercisesOf(S.level).length + annalesOf(S.level).filter((a) => a.guided).length + nGx;
   const exam = examOf() ? examOf()[0] : "BAC", nNot = notionsOf(S.level).length;
   const tile = (href, icon, title, sub) => `<a class="subj tile" href="${href}"><span class="ico">${icon}</span><b>${title}</b><span class="small muted">${sub}</span></a>`;
   return [
-    nAnn ? tile("#annales", "📚", examOf() ? `Sujets du ${exam}` : "Devoirs et compositions", `${nAnn} vrais sujets${examOf() ? " et corrigés" : " de ta classe"}`) : "",
+    nAnn || nGs ? tile("#annales", "📚", examOf() ? `Sujets du ${exam}` : "Devoirs types", `${nAnn ? `${nAnn} sujet${nAnn > 1 ? "s" : ""} rédigé${nAnn > 1 ? "s" : ""}` : ""}${nAnn && nGs ? " + " : ""}${nGs ? "un sujet neuf à chaque essai" : ""}, corrigés pas à pas`) : "",
+    tile("#matiere", "🗂️", "Mes matières", "Chapitre par chapitre : cours, synthèse, formules, exercices, QCM"),
     tile("#agenda", "🗓️", "Mon agenda", "Emploi du temps, devoirs à rendre, rappels du soir"),
     tile("#assistant", "💬", "Pose ta question", "Une notion pas claire ? Je réponds avec le cours"),
     tile("#devoir", "🎯", "Préparer un devoir", "Choisis la matière et les chapitres du programme"),
     tile("#qcm-list", "✅", "QCM corrigés", "Chaque choix corrigé et expliqué"),
-    tile("#exercices", "✏️", "Exercices corrigés", nEx ? `${nEx} exercices pas à pas` : "Bientôt pour ta classe"),
+    tile("#exercices", "✏️", "Exercices corrigés", nEx ? `${nEx} exercices pas à pas${nGx ? ", nombres nouveaux à chaque essai" : ""}` : "Bientôt pour ta classe"),
     nNot ? tile("#notions", "📖", "Notions de cours", `${nNot} chapitres : cours, exemples, exercice corrigé`) : "",
     tile("#fiches", "📝", "Synthèses de cours", "L'essentiel à retenir"),
+    tile("#apprendre", "🚀", "Mieux apprendre", "Plan de révision, diagnostic, jour J, dictées, cartes mentales"),
+    tile("#vie", "🌍", "Les cours dans la vie", "Marché, factures Senelec et eau, solaire, route"),
+    tile("#outils", "🧰", "Mes outils", "Fiches flash, formulaire, moyenne, minuteur, journal"),
     tile("#challenge", "🏆", "Challenge du jour", "Toutes les matières, résultats en graphique"),
     tile("#duo", "👥", "Session de groupe", "De 2 à 10 élèves, classement en direct"),
     tile("#examen", "⏱️", blancName(), `${EXAM_LEN} questions en ${EXAM_MIN} min${isPremium() ? "" : " 🔒"}`),
@@ -112,7 +119,7 @@ function rubriques() {
 }
 // Vidéo de présentation (45 s), proposée sur l'accueil pendant les premiers jours
 function tutoCard() {
-  if (S.premium || S.tutoVu) return "";
+  if (S.premium || S.tutoVu || S.eco) return "";
   return `<div class="card tuto"><div class="row"><h2>▶️ Découvre l'appli en 45 secondes</h2><button class="btn alt small" id="tuto-x" aria-label="Fermer">✕</button></div>
     <video src="tuto.mp4" controls playsinline preload="none" poster="apercu.png"></video></div>`;
 }
@@ -136,14 +143,15 @@ function viewHome() {
   const free = DATA.questions.filter((q) => q.free && inLevel(q));
   const daily = free[Math.floor(new Date(today()).getTime() / 864e5) % free.length];
   const subs = subjectsOf(S.level).map((s) => `
-    <a class="subj" href="#quiz/${s.id}" style="text-decoration:none;color:inherit">
+    <a class="subj" href="${(DATA.programmes || {})[s.id] && !/annales/.test(s.id) ? "#matiere/" : "#quiz/"}${s.id}" style="text-decoration:none;color:inherit">
       <b>${esc(s.name)}</b>
-      <span class="small muted">${isPremium() ? s.count : s.free} questions${isPremium() ? "" : ` · <span class="lock">🔒 ${s.count - s.free} premium</span>`}</span>
+      <span class="small muted">${s.count} questions${(GEN[s.id] || []).length ? " + ∞ à nombres nouveaux" : ""}${isPremium() ? "" : ` · <span class="lock">🔒</span>`}</span>
       <span class="bar"><i style="width:${mastery(s.id)}%"></i></span>
     </a>`).join("");
   $view.innerHTML = `
     ${isIOS && !standalone ? `<div class="card small"><b>Installer sur iPhone :</b> ouvre ce lien dans Safari, appuie sur Partager (carré avec une flèche) puis sur « Sur l'écran d'accueil ».</div>` : ""}
     ${!S.premium && trialLeft() > 0 ? `<a class="trial" href="#premium">🎁 Essai gratuit : tout est débloqué encore <b>${trialLeft()} jour${trialLeft() > 1 ? "s" : ""}</b></a>` : ""}
+    ${!isPremium() ? `<a class="trial" href="#premium">🔒 Ton essai gratuit de ${TRIAL_DAYS} jours est terminé. Abonne-toi pour tout retrouver, avec tes progrès.</a>` : ""}
     <div class="card">
       <div class="row">${ex ? `<div><p class="small muted">${ex[0]} ${ex[1].slice(0, 4)}, date indicative</p><p class="count">J−${days}</p></div>`
         : `<div><p class="small muted">Réponses données</p><p class="count">${answered}</p></div>`}
@@ -151,7 +159,10 @@ function viewHome() {
     </div>
     ${ficheCard()}
     <div id="ecole-accueil"></div>
+    ${typeof profilCard === "function" ? profilCard() : ""}
+    ${typeof planCard === "function" ? planCard() : ""}
     ${agendaCard()}
+    ${typeof citationCard === "function" ? citationCard() : ""}
     ${tutoCard()}
     ${programme()}
     <h2>Rubriques</h2>
@@ -276,29 +287,8 @@ function viewErrors() {
     : `<div class="card"><p>Aucune erreur à revoir. Fais un quiz depuis l'accueil.</p><a class="btn" href="#accueil">Choisir une matière</a></div>`}`;
 }
 
-// ---------- Annales : vrais sujets, avec leur structure et le lien vers le PDF original
-const annalesOf = (level) => (DATA.annales || []).filter((a) => matches(a.levels, level));
-const devoirsOf = (level) => (DATA.devoirs || []).filter((a) => matches(a.levels, level));
-// Devoirs et compositions d'établissements pour les classes sans examen national, rangés par matière puis par année
-function devoirsBlock() {
-  const list = devoirsOf(S.level);
-  if (!list.length) return "";
-  const subs = [...new Set(list.map((a) => a.subject))];
-  return `<h2>Devoirs et compositions : ${list.length} sujets</h2>
-    <p class="small muted">Vrais devoirs, compositions harmonisées et séries d'exercices donnés dans des établissements et inspections du Sénégal (ce ne sont pas des examens nationaux). Beaucoup ont leur corrigé. Hébergés par ${esc(DATA.libraryHost)}.</p>
-    ${subs.map((sub) => `<div class="card"><h2>${esc(sub)}</h2>${list.filter((a) => a.subject === sub).sort((a, b) => String(b.year).localeCompare(String(a.year))).map((a) =>
-      `<a class="row lib" href="${esc(a.url)}" target="_blank" rel="noopener"><span>${esc(a.title)}</span><span class="small muted">${a.year ? esc(a.year) + " · " : ""}ouvrir ↗</span></a>`).join("")}</div>`).join("")}`;
-}
-const libraryOf = (level) => (DATA.library || []).filter((a) => matches(a.levels, level));
-function libraryBlock() {
-  const list = libraryOf(S.level);
-  if (!list.length) return "";
-  const years = [...new Set(list.map((a) => a.year))].sort((a, b) => b - a);
-  return `<h2>Bibliothèque : ${list.length} sujets de ${years[years.length - 1]} à ${years[0]}</h2>
-    <p class="small muted">Les sujets officiels, année par année. Chaque lien ouvre la page du sujet (PDF à télécharger, souvent avec le corrigé), hébergée par ${esc(DATA.libraryHost)}.</p>
-    ${years.map((y) => `<div class="card"><h2>${list[0].exam} ${y}</h2>${list.filter((a) => a.year === y).map((a) =>
-      `<a class="row lib" href="${esc(a.url)}" target="_blank" rel="noopener"><span>${esc(a.subject)}</span><span class="small muted">${a.series ? "Séries " + esc(a.series) + " · " : ""}ouvrir ↗</span></a>`).join("")}</div>`).join("")}`;
-}
+// ---------- Annales : sujets officiels repris dans l'appli et corrigés étape par étape (les références sont gardées dans contenu/)
+const annalesOf = (level) => (DATA.annales || []).filter((a) => a.guided && matches(a.levels, level));
 
 // ---------- Synthèses de cours : l'essentiel à retenir, gratuit, avant les quiz
 function viewFiches() {
@@ -324,11 +314,13 @@ function viewFiche(arg) {
   const nots = ((DATA.notions || {})[sid] || []).filter((n) => c.p !== undefined && n.pch === c.p);
   const prog = (DATA.programmes || {})[sid];
   $view.innerHTML = `<p class="tag-src">${esc(s.name)} · chapitre ${i + 1} / ${f.length}</p><h1>${esc(c.t)}</h1>
+    <div class="btns">${typeof audioBtn === "function" ? audioBtn() : ""}<a class="btn alt" href="#carte/${sid}~${i}">🧠 Carte mentale</a></div>
     <div class="card notion-key"><h2>📌 L'essentiel</h2><ul class="steps">${c.cles.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>
     ${(c.methodes || []).map(([t, st]) => `<div class="card"><h2>🛠️ Méthode : ${esc(t)}</h2><ol class="steps">${st.map((l) => `<li>${esc(l)}</li>`).join("")}</ol></div>`).join("")}
     ${c.pieges ? `<div class="card"><h2>⚠️ Pièges à éviter</h2><ul class="steps">${c.pieges.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>` : ""}
     ${[...(c.exemple ? [c.exemple] : []), ...(c.exemples || [])].map(([q, lines], j, all) => `<div class="card"><h2>💡 Exercice corrigé${all.length > 1 ? " " + (j + 1) : ""}</h2><p><b>${esc(q)}</b></p><details><summary class="small">Voir le corrigé</summary><ol class="steps">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ol></details></div>`).join("")}
     ${c.exam ? `<div class="card"><h2>🎯 À l'examen</h2><p>${esc(c.exam)}</p></div>` : ""}
+    ${typeof pourquoiCard === "function" ? pourquoiCard(c.t, sid) : ""}
     ${prog && c.p !== undefined ? `<button class="btn hi-btn" id="train">✏️ M'entraîner sur ce chapitre</button>` : `<a class="btn hi-btn" href="#quiz/${s.id}">✏️ M'entraîner sur ${esc(s.name)}</a>`}
     ${nots.map((n) => `<a class="btn alt" href="#notion/${n.id}">📖 Cours détaillé : ${esc(n.title)}${isPremium() || n.free ? "" : " 🔒"}</a>`).join("")}
     ${f[i + 1] ? `<a class="btn alt" href="#fiche/${sid}~${i + 1}">Chapitre suivant : ${esc(f[i + 1].t)}</a>` : ""}
@@ -352,7 +344,7 @@ function viewNotion(id) {
   if (!isPremium() && !c.free) return viewPremium("Tous les chapitres détaillés font partie du pack premium. Le premier chapitre de chaque matière est gratuit.");
   markDone("fiche");
   const s = DATA.subjects.find((x) => x.id === c.sid), next = all.find((x) => x.sid === c.sid && x.i === c.i + 1);
-  $view.innerHTML = `<p class="tag-src">${esc(s ? s.name : "")} · chapitre ${c.i + 1} / ${c.n}</p><h1>${esc(c.title)}</h1>
+  $view.innerHTML = `<p class="tag-src">${esc(s ? s.name : "")} · chapitre ${c.i + 1} / ${c.n}</p><h1>${esc(c.title)}</h1>${typeof audioBtn === "function" ? audioBtn() : ""}
     <div class="card"><h2>📘 Le cours</h2>${c.cours.map((p) => `<p>${esc(p)}</p>`).join("")}</div>
     ${c.svg ? `<div class="card notion-fig">${c.svg}</div>` : ""}
     <div class="card notion-key"><h2>📌 À retenir</h2><ul class="steps">${c.enonce.map((p) => `<li>${esc(p)}</li>`).join("")}</ul></div>
@@ -411,20 +403,17 @@ function viewDevoir(arg) {
 function viewAnnales() {
   const list = annalesOf(S.level);
   $view.innerHTML = `${examOf() ? `<h1>Sujets du ${esc(examOf()[0])}</h1>
-    <p class="muted">Vrais sujets officiels du ${esc(examOf()[0])}. Les questions sourcées de l'appli en sont tirées.</p>` : `<h1>Devoirs et compositions</h1>
-    <p class="muted">Ta classe n'a pas d'examen national : voici de vrais devoirs et compositions de ${esc(S.level)} pour t'entraîner.</p>`}
+    <p class="muted">Des sujets complets du ${esc(examOf()[0])}, avec la structure, le barème et les notions des épreuves officielles. Tu les traites étape par étape et chaque réponse est corrigée.</p>` : `<h1>Devoirs et compositions</h1>
+    <p class="muted">Ta classe n'a pas d'examen national : voici des devoirs types de ${esc(S.level)} pour t'entraîner, corrigés étape par étape.</p>`}
     ${list.length ? list.map((a) => `<div class="card">
-      <div class="row"><h2>${esc(a.exam)} ${a.year}</h2><span class="tag">${esc(a.subject)}</span></div>
-      <p class="small muted">Séries ${esc(a.series)}${a.duration ? " · " + esc(a.duration) : ""}${a.coef ? " · coefficient " + a.coef : ""}</p>
+      <div class="row"><h2>${a.modele ? `Sujet ${esc(a.exam)} ${esc(a.year)}` : `${esc(a.exam)} ${a.year}`}</h2><span class="tag">${esc(a.subject)}</span></div>
+      ${a.modele ? `<p class="small muted">Sur le modèle de l'épreuve officielle</p>` : ""}<p class="small muted">${a.series ? "Séries " + esc(a.series) : esc(a.levels.join(", "))}${a.duration ? " · " + esc(a.duration) : ""}${a.coef ? " · coefficient " + a.coef : ""}</p>
       ${a.parts ? `<ul class="steps small">${a.parts.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
-      <div class="row"><a class="btn" style="flex:1" href="${esc(a.sujet)}" target="_blank" rel="noopener">Sujet (PDF)</a>
-      <a class="btn alt" style="flex:1" href="${esc(a.corrige)}" target="_blank" rel="noopener">Corrigé (PDF)</a></div>
-      ${a.guided ? `<a class="btn hi-btn" href="#sujet/${a.id}">Faire ce sujet en mode guidé, corrigé à chaque étape${isPremium() ? "" : " 🔒"}</a>` : ""}
-      <p class="small muted">Fichiers hébergés par ${esc(DATA.annalesHost)}.</p></div>`).join("")
+      ${a.guided ? `<a class="btn hi-btn" href="#sujet/${a.id}">Faire ce sujet en mode guidé, corrigé à chaque étape${isPremium() ? "" : " 🔒"}</a>` : ""}</div>`).join("")
     : ""}
-    ${libraryBlock()}
-    ${devoirsBlock()}
-    ${list.length || libraryOf(S.level).length || devoirsOf(S.level).length ? "" : `<div class="card"><p>Pas encore d'annales pour ta série. Elles arrivent au fur et à mesure.</p></div>`}`;
+    ${genSujetsOf(S.level).length ? `<h2>${examOf() ? "Sujets types" : "Devoirs types"} à nombres nouveaux</h2><p class="small muted">4 exercices de chapitres différents, notés sur 20. Un sujet différent à chaque essai.</p>
+      ${genSujetsOf(S.level).map((g) => `<a class="card lib-card" href="#sujet/${g.id}"><b>${esc(g.subject)} : nouveau sujet</b><span class="small muted">${examOf() ? `Sur le modèle du ${esc(examOf()[0])}` : "Devoir de 2 h"} · noté sur 20${isPremium() ? "" : " 🔒"}</span></a>`).join("")}` : ""}
+    ${list.length || genSujetsOf(S.level).length ? "" : `<div class="card"><p>Pas encore d'annales pour ta série. Elles arrivent au fur et à mesure.</p></div>`}`;
 }
 
 // ---------- Exercices corrigés : sujets guidés et exercices pas à pas de la classe
@@ -432,14 +421,15 @@ function viewExercices() {
   const ann = annalesOf(S.level).filter((a) => a.guided), exs = exercisesOf(S.level);
   const card = (href, title, sub, lock) => `<a class="card lib-card" href="${href}"><b>${esc(title)}</b><span class="small muted">${esc(sub)}${lock ? " 🔒" : ""}</span></a>`;
   $view.innerHTML = `<h1>Exercices corrigés</h1><p class="muted">Tu réponds étape par étape ; après chaque réponse, le corrigé s'affiche avec les points gagnés.</p>
-    ${ann.length ? `<h2>Sujets complets du ${esc(examOf() ? examOf()[0] : "BAC")}</h2>${ann.map((a) => card(`#sujet/${a.id}`, `${a.exam} ${a.year} · ${a.subject}`, `Séries ${a.series} · sujet entier noté sur 20`, !isPremium())).join("")}` : ""}
+    ${ann.length ? `<h2>Sujets complets du ${esc(examOf() ? examOf()[0] : "BAC")}</h2>${ann.map((a) => card(`#sujet/${a.id}`, `${a.exam} ${a.year} · ${a.subject}`, `${a.series ? `Séries ${a.series} · ` : ""}${a.modele ? "sur le modèle officiel · " : ""}sujet entier noté sur 20`, !isPremium())).join("")}` : ""}
     ${exs.length ? `<h2>Exercices</h2>${exs.map((e) => card(`#sujet/${e.id}`, `${e.subject} · ${e.title}`, `${e.src} · ${e.guided.reduce((n, p) => n + p.steps.length, 0)} étapes${e.free ? " · gratuit" : ""}`, !isPremium() && !e.free)).join("")}` : ""}
-    ${ann.length + exs.length ? "" : `<div class="card"><p>Les exercices corrigés de ta classe arrivent. En attendant, fais les QCM corrigés.</p><a class="btn" href="#qcm-list">QCM corrigés</a></div>`}`;
+    ${genExosOf(S.level).length ? `<h2>Exercices à nombres nouveaux</h2><p class="small muted">Les nombres changent à chaque essai : refais-les autant que tu veux.</p>${genExosOf(S.level).map((e) => card(`#sujet/${e.id}`, `${e.subject} · ${e.title}`, "Énoncé suivi · noté sur 5 · ∞", !isPremium())).join("")}` : ""}
+    ${ann.length + exs.length + genExosOf(S.level).length ? "" : `<div class="card"><p>Les exercices corrigés de ta classe arrivent. En attendant, fais les QCM corrigés.</p><a class="btn" href="#qcm-list">QCM corrigés</a></div>`}`;
 }
 function viewQcmList() {
   $view.innerHTML = `<h1>QCM corrigés</h1><p class="muted">Pour chaque question, tu vois si ton choix est juste, la bonne réponse et l'explication. Les erreurs sont gardées pour les revoir.</p>
     <div class="grid">${subjectsOf(S.level).map((s) => `<a class="subj" href="#quiz/${s.id}" style="text-decoration:none;color:inherit"><b>${esc(s.name)}</b>
-      <span class="small muted">${isPremium() ? s.count : s.free} questions</span><span class="bar"><i style="width:${mastery(s.id)}%"></i></span></a>`).join("")}</div>
+      <span class="small muted">${isPremium() ? s.count : s.free} questions${isPremium() && (GEN[s.id] || []).length ? " + ∞" : ""}</span><span class="bar"><i style="width:${mastery(s.id)}%"></i></span></a>`).join("")}</div>
     <a class="btn alt" href="#erreurs">Revoir mes erreurs</a>`;
 }
 
@@ -530,7 +520,10 @@ function viewChallenge() {
 // ---------- Sujet guidé : un vrai sujet, étape par étape, corrigé tout de suite
 const pts = (x) => String(Math.round(x * 100) / 100).replace(".", ",");
 function viewGuided(id) {
-  const an = [...(DATA.annales || []), ...(DATA.exercises || [])].find((x) => x.id === id && x.guided);
+  const gid = String(id), cut = gid.lastIndexOf("-");
+  const an = [...(DATA.annales || []), ...(DATA.exercises || [])].find((x) => x.id === id && x.guided)
+    || (typeof genExercise === "function" && gid.startsWith("gx-") ? genExercise(gid.slice(3, cut), +gid.slice(cut + 1)) : null)
+    || (typeof genSujet === "function" && gid.startsWith("gs-") ? genSujet(gid.slice(3)) : null);
   if (!an) return go("exercices");
   if (!isPremium() && !an.free) return viewPremium("Les sujets guidés et les exercices corrigés font partie du pack premium.");
   const head = an.title ? `${an.subject} · ${an.title}` : `${an.exam} ${an.year} · ${an.subject}`;
@@ -540,9 +533,9 @@ function viewGuided(id) {
   const byPart = an.guided.map(() => 0), picks = [];
   function intro() {
     $view.innerHTML = `<div class="card"><p class="tag-src">${an.title ? "Exercice corrigé" : "Sujet guidé"}</p><h1>${esc(head)}</h1>
-      ${an.src ? `<p class="src">📄 ${esc(an.src)}</p>` : `<p class="muted">Séries ${esc(an.series)}${an.duration ? " · " + esc(an.duration) : ""}${an.coef ? " · coefficient " + an.coef : ""}</p>`}
+      ${an.src ? `<p class="src">📄 ${esc(an.src)}</p>` : `<p class="muted">${an.modele ? "Sur le modèle de l'épreuve officielle · " : ""}${an.series ? "Séries " + esc(an.series) : esc(an.levels.join(", "))}${an.duration ? " · " + esc(an.duration) : ""}${an.coef ? " · coefficient " + an.coef : ""}</p>`}
       <p>Tu réponds étape par étape. Choisis si tu veux le corrigé après chaque réponse ou seulement à la fin.</p>
-      <p class="small muted">${steps.length} étapes, ${pts(max)} points.${an.title ? "" : " Les tableaux et les tracés de courbes ne sont pas notés ici. Énoncé reformulé ; l'original est en PDF dans les annales."}</p>
+      <p class="small muted">${steps.length} étapes, ${pts(max)} points.${an.gen ? " Les nombres changent à chaque essai : tu peux le refaire autant de fois que tu veux." : an.title ? "" : " Les tableaux et les tracés de courbes ne sont pas notés ici."}</p>
       <button class="btn" id="go">🧑‍🏫 Avec support<br><span class="small">Corrigé et points après chaque réponse</span></button>
       <button class="btn alt" id="solo">💪 Tout seul<br><span class="small">Tu fais tout l'exercice, corrigé ligne par ligne à la fin</span></button></div>`;
     document.getElementById("go").onclick = () => { solo = false; k = 0; markDone("exo"); step(); };
@@ -579,12 +572,12 @@ function viewGuided(id) {
     $view.innerHTML = `<div class="card" style="text-align:center"><p class="muted">${esc(head)}</p>
       <p class="score">${pts(note)} / 20</p><p>${pts(got)} points sur ${pts(max)} notés</p></div>
       <div class="card">${an.guided.map((p, i) => `<div class="row small"><span>${esc(p.title)}</span><b>${pts(byPart[i])} / ${pts(p.steps.reduce((n, x) => n + x.pts, 0))}</b></div>`).join("")}</div>
-      <div class="btns">${an.corrige ? `<a class="btn alt" href="${esc(an.corrige)}" target="_blank" rel="noopener">Corrigé officiel complet (PDF)</a>` : ""}
-      <button class="btn" id="again">Recommencer</button>${an.chapter ? `<a class="btn alt" href="#notion/${an.chapter}">Revoir le cours</a>` : ""}<a class="btn alt" href="#exercices">Autres exercices</a></div>
+      <div class="btns">
+      <button class="btn" id="again">${an.gen ? "Nouveaux nombres" : "Recommencer"}</button>${an.chapter ? `<a class="btn alt" href="#notion/${an.chapter}">Revoir le cours</a>` : ""}<a class="btn alt" href="#exercices">Autres exercices</a></div>
       ${solo ? `<h2>Corrigé ligne par ligne</h2>${steps.map((st, i) => { const ok = picks[i] === st.a;
         return `<div class="card"><p class="small muted">${esc(an.guided[st.pi].title)} · ${pts(st.pts)} pt</p><p><b>${esc(st.q)}</b></p>
           <p class="${ok ? "msg-ok" : "msg-ko"}">${ok ? "✓ Juste" : "✗ Ta réponse : " + esc(st.c[picks[i]])} · Bonne réponse : ${esc(st.c[st.a])}</p><p class="small">${esc(st.e)}</p></div>`; }).join("")}` : ""}`;
-    document.getElementById("again").onclick = () => { got = 0; byPart.fill(0); picks.length = 0; intro(); };
+    document.getElementById("again").onclick = () => (an.gen ? viewGuided(id) : (got = 0, byPart.fill(0), picks.length = 0, intro()));
     window.scrollTo(0, 0);
   }
   intro();
@@ -723,7 +716,7 @@ function render() {
   clearInterval(timer);
   // hors connexion (Firebase injoignable), l'appli reste utilisable en local
   if (Compte.enabled && Compte.ready && !Compte.user) return viewLogin();
-  const [tab, arg] = (location.hash.slice(1) || (isStaff() ? "ecole" : "accueil")).split("/");
+  const [tab, ...rest] = (location.hash.slice(1) || (isStaff() ? "ecole" : "accueil")).split("/"), arg = rest.length ? rest.join("/") : undefined;
   document.getElementById("exam-tag").textContent = S.level || "";
   // onglets selon le profil : l'équipe de l'école a son espace à la place des erreurs et du premium
   document.querySelectorAll(".tabs a").forEach((a) => { a.hidden = S.role === "parent" ? a.dataset.tab !== "ecole" : isStaff() ? ["erreurs", "premium"].includes(a.dataset.tab) : a.dataset.tab === "ecole"; });
@@ -734,8 +727,11 @@ function render() {
   if (tab === "inscription" && S.role === "eleve") return viewInscription();
   if (tab === "ecole" && isStaff()) { document.querySelectorAll(".tabs a").forEach((a) => { if (a.dataset.tab === "ecole") a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); }); return viewEcole(); }
   if ((!S.level || !DATA.levels.includes(S.level)) && tab !== "classe") { S.level = null; return viewLevel(); }
+  // après l'essai, l'appli est la même pour tous mais réservée aux abonnés : seuls l'accueil, la classe et les progrès restent visibles
+  if (!isPremium() && !["accueil", "classe", "premium", "progres"].includes(tab)) return viewPremium(`Ton essai gratuit de ${TRIAL_DAYS} jours est terminé. Abonne-toi pour continuer à réviser.`);
   document.querySelectorAll(".tabs a").forEach((a) => { if (a.dataset.tab === tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
-  ({ classe: viewLevel, annales: viewAnnales, exercices: viewExercices, "qcm-list": viewQcmList, devoir: () => viewDevoir(arg), duo: () => viewDuo(arg), challenge: viewChallenge, fiches: viewFiches, fiche: () => viewFiche(arg), assistant: viewAssistant, agenda: () => viewAgenda(arg), notions: viewNotions, notion: () => viewNotion(arg), sujet: () => viewGuided(arg), quiz: () => viewQuiz(arg), examen: viewExam, erreurs: viewErrors, progres: viewProgress, premium: () => viewPremium(), carte: viewCarte, notes: () => viewMesNotes(arg), cahier: viewCahier, demandes: viewMesDemandes, messages: () => viewMessagesEleve(arg), documents: viewMesDocuments, badges: viewBadges, assiduite: viewAssiduite, clubs: viewClubs, orientation: viewOrientation, rendre: viewRendre }[tab] || viewHome)();
+  if ((globalThis.ROUTES || {})[tab]) { ROUTES[tab](arg); window.scrollTo(0, 0); return; }
+  ({ classe: viewLevel, annales: viewAnnales, exercices: viewExercices, "qcm-list": viewQcmList, devoir: () => viewDevoir(arg), duo: () => viewDuo(arg), challenge: viewChallenge, fiches: viewFiches, fiche: () => viewFiche(arg), assistant: viewAssistant, agenda: () => viewAgenda(arg), notions: viewNotions, notion: () => viewNotion(arg), sujet: () => viewGuided(arg), quiz: () => viewQuiz(arg), examen: viewExam, erreurs: viewErrors, progres: viewProgress, premium: () => viewPremium(), carte: viewCarte, notes: () => viewMesNotes(arg), cahier: viewCahier, demandes: viewMesDemandes, messages: () => viewMessagesEleve(arg), documents: viewMesDocuments, badges: viewBadges, assiduite: viewAssiduite, clubs: viewClubs, orientation: viewOrientation, rendre: viewRendre, vie: () => viewVie(arg), outils: () => viewOutils(arg) }[tab] || viewHome)();
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", render);
