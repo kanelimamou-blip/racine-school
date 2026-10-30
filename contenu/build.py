@@ -184,6 +184,19 @@ service cloud.firestore {
       allow read: if signedIn() && (request.auth.uid == uid || isEquipe() || isParentDe(uid));
       allow write: if isStaff();
     }
+    // emplois du temps (lus par tous), absences des professeurs, avancement du programme
+    match /edt/{cid} {
+      allow read: if signedIn();
+      allow write: if isDir();
+    }
+    match /absprofs/{id} {
+      allow read: if isEquipe();
+      allow write: if isDir();
+    }
+    match /progressions/{id} {
+      allow read: if isEquipe();
+      allow write: if isStaff();
+    }
     // annonces et calendrier de l'école : publiés par la direction, lus par tous
     match /annonces/{id} {
       allow read: if signedIn();

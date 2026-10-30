@@ -168,3 +168,6 @@ textarea.field{width:100%;padding:10px;border-radius:10px;border:1px solid var(-
 .tab-notes{width:100%;border-collapse:collapse;font-size:.85rem}.tab-notes th,.tab-notes td{border-bottom:1px solid var(--line);padding:5px 4px;text-align:left}
 .tab-notes th{font-size:.75rem;color:var(--muted, #667)}
 details.card summary{cursor:pointer}
+.creneau{padding:6px 0;border-bottom:1px solid var(--line);gap:8px}.creneau .btn{width:auto;flex:none;padding:6px 10px}
+.chap{padding:6px 0;border-bottom:1px solid var(--line);gap:10px}.chap input{flex:none;width:22px;height:22px}
+details summary{cursor:pointer;padding:6px 0}
