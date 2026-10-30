@@ -29,7 +29,8 @@ if (!S.trialStart) { S.trialStart = today(); store.save(); }
 const trialLeft = () => Math.max(0, TRIAL_DAYS - Math.floor((new Date(today()) - new Date(S.trialStart)) / 864e5));
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-const isPremium = () => S.premium || trialLeft() > 0 || isStaff();
+// Racine School : l'école paie un forfait, tout est ouvert à tous les élèves (pas d'essai ni de code premium)
+const isPremium = () => true;
 const open = (q) => isPremium() || q.free;
 const qsOf = (sid) => DATA.questions.filter((q) => q.s === sid);
 // Tirage sans répétition : d'abord les questions jamais vues, puis celles ratées, puis les plus anciennes ;
@@ -131,7 +132,7 @@ function programme() {
   const missions = [["challenge", "#challenge", "Fais le challenge du jour (toutes matières)"],
     ["qcm", weakest ? `#quiz/${weakest.id}` : "#qcm-list", `QCM dans ta matière la plus faible${weakest ? " : " + weakest.name : ""}`], third];
   const done = missions.filter(([t]) => doneToday(t)).length;
-  const trial = !S.premium && n <= TRIAL_DAYS;
+  const trial = false;
   return `<div class="card prog"><div class="row"><h2>${trial ? `Mon programme : jour ${n} / ${TRIAL_DAYS}` : "Mes missions du jour"}</h2><b>${done}/3</b></div>
     ${missions.map(([t, href, label]) => `<a class="mission${doneToday(t) ? " done" : ""}" href="${href}"><span>${doneToday(t) ? "✅" : "⬜"}</span><span>${esc(label)}</span></a>`).join("")}
     ${done === 3 ? `<p class="msg-ok small">Bravo, journée réussie ! Reviens demain pour garder ta série 🔥</p>` : `<p class="small muted">3 missions par jour, environ 20 minutes.</p>`}</div>`;
@@ -150,7 +151,6 @@ function viewHome() {
     </a>`).join("");
   $view.innerHTML = `
     ${isIOS && !standalone ? `<div class="card small"><b>Installer sur iPhone :</b> ouvre ce lien dans Safari, appuie sur Partager (carré avec une flèche) puis sur « Sur l'écran d'accueil ».</div>` : ""}
-    ${!S.premium && trialLeft() > 0 ? `<a class="trial" href="#premium">🎁 Essai gratuit : tout est débloqué encore <b>${trialLeft()} jour${trialLeft() > 1 ? "s" : ""}</b></a>` : ""}
     ${!isPremium() ? `<a class="trial" href="#premium">🔒 Ton essai gratuit de ${TRIAL_DAYS} jours est terminé. Abonne-toi pour tout retrouver, avec tes progrès.</a>` : ""}
     <div class="card">
       <div class="row">${ex ? `<div><p class="small muted">${ex[0]} ${ex[1].slice(0, 4)}, date indicative</p><p class="count">J−${days}</p></div>`
@@ -671,7 +671,7 @@ function go(h) { location.hash = h; }
 function viewLogin(err = "", ok = "") {
   $view.innerHTML = `<div class="card" style="gap:14px">
     <img src="icons/logo.svg" alt="" style="width:96px;height:96px;margin:0 auto;display:block"><h1 style="text-align:center;margin:0">Bienvenue sur Racine School</h1><p style="text-align:center;margin:0;font-style:italic">L'Excellence et la Réussite</p>
-    <p class="muted" style="text-align:center">Connecte-toi pour garder tes progrès et profiter de ${TRIAL_DAYS} jours d'essai gratuit avec tout débloqué.</p>
+    <p class="muted" style="text-align:center">Connecte-toi pour garder tes progrès sur tous tes téléphones.</p>
     <button class="btn" id="google">Se connecter avec Google</button>
     <p class="small muted" style="text-align:center">ou avec ton adresse e-mail</p>
     <input class="field" id="mail" type="email" autocomplete="email" placeholder="Adresse e-mail">
@@ -731,7 +731,7 @@ function render() {
   if (!isPremium() && !["accueil", "classe", "premium", "progres"].includes(tab)) return viewPremium(`Ton essai gratuit de ${TRIAL_DAYS} jours est terminé. Abonne-toi pour continuer à réviser.`);
   document.querySelectorAll(".tabs a").forEach((a) => { if (a.dataset.tab === tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   if ((globalThis.ROUTES || {})[tab]) { ROUTES[tab](arg); window.scrollTo(0, 0); return; }
-  ({ classe: viewLevel, annales: viewAnnales, exercices: viewExercices, "qcm-list": viewQcmList, devoir: () => viewDevoir(arg), duo: () => viewDuo(arg), challenge: viewChallenge, fiches: viewFiches, fiche: () => viewFiche(arg), assistant: viewAssistant, agenda: () => viewAgenda(arg), notions: viewNotions, notion: () => viewNotion(arg), sujet: () => viewGuided(arg), quiz: () => viewQuiz(arg), examen: viewExam, erreurs: viewErrors, progres: viewProgress, premium: () => viewPremium(), carte: viewCarte, notes: () => viewMesNotes(arg), cahier: viewCahier, demandes: viewMesDemandes, messages: () => viewMessagesEleve(arg), documents: viewMesDocuments, badges: viewBadges, assiduite: viewAssiduite, clubs: viewClubs, orientation: viewOrientation, rendre: viewRendre, vie: () => viewVie(arg), outils: () => viewOutils(arg) }[tab] || viewHome)();
+  ({ classe: viewLevel, annales: viewAnnales, exercices: viewExercices, "qcm-list": viewQcmList, devoir: () => viewDevoir(arg), duo: () => viewDuo(arg), challenge: viewChallenge, fiches: viewFiches, fiche: () => viewFiche(arg), assistant: viewAssistant, agenda: () => viewAgenda(arg), notions: viewNotions, notion: () => viewNotion(arg), sujet: () => viewGuided(arg), quiz: () => viewQuiz(arg), examen: viewExam, erreurs: viewErrors, progres: viewProgress, premium: () => viewPremium(), carte: viewCarte, notes: () => viewMesNotes(arg), cahier: viewCahier, demandes: viewMesDemandes, messages: () => viewMessagesEleve(arg), documents: viewMesDocuments, badges: viewBadges, assiduite: viewAssiduite, clubs: viewClubs, orientation: viewOrientation, rendre: viewRendre, vie: () => viewVie(arg), outils: () => viewOutils(arg) }[tab === "premium" ? "accueil" : tab] || viewHome)();
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", render);

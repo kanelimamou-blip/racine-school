@@ -9,10 +9,9 @@ En ligne : https://kanelimamou-blip.github.io/racine-school/ (version Racine Sch
 - `contenu/` : les questions (`questions.py` pour la 3e et la Terminale, `q_college.py` de la 6e à la 4e, `q_lycee.py` pour la 2nde et la 1ère) `annales.py` pour les vrais sujets du BAC (structure, liens vers le PDF original et questions tirées de ces sujets, avec leur source), et `build.py`, qui génère `docs/data/`.
 - `docs/` : l'appli (HTML/JS), publiée sur GitHub Pages à chaque modification.
 
-## Premium
+## Accès
 
-Pendant les 10 premiers jours (essai gratuit, `TRIAL_DAYS` dans `docs/app.js`), tout est débloqué ; ensuite, les 5 premières questions de chaque matière restent gratuites. Le reste et les examens blancs se débloquent avec un code vendu par Wave (prix, numéro Wave et WhatsApp dans `CONFIG` de `contenu/build.py`).
-`python contenu/build.py --codes 100` ajoute des codes (format `XXXXX-XXXXXX`, contrôlés par un secret). La liste en clair, le secret et les règles Firestore à coller dans la console sont écrits hors du dépôt ; seuls les hachages sont publiés (`contenu/code_hashes.txt`).
+L'école paie un forfait : tout est ouvert à tous les élèves, sans essai ni code premium (`isPremium()` renvoie toujours vrai dans `docs/app.js`). Les codes premium et `--codes` de `contenu/build.py` ne servent plus.
 
 ## Comptes
 
