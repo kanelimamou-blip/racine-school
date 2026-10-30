@@ -172,8 +172,14 @@ def new_codes(n, dest):
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("a") as f:
         f.writelines(c + "\n" for c in codes)
-    (PRIVATE / "firestore.rules").write_text(RULES.replace("SECRET", sec))
+    (PRIVATE / "firestore.rules").write_text(rules_texte(sec))
     print(f"{n} codes ajoutés dans {dest}")
+
+
+def rules_texte(sec):
+    """Règles à coller dans la console : sans commentaires ni lignes vides, en ASCII (le copier-coller depuis un téléphone abîme les accents)."""
+    lignes = [l for l in RULES.replace("SECRET", sec).splitlines() if l.strip() and not l.strip().startswith("//")]
+    return "\n".join(lignes) + "\n"
 
 
 ROLES = {"directeur": "DIR", "prof": "PROF"}
@@ -185,7 +191,7 @@ def new_keys():
     keys = {r: f"{pre}-{hashlib.sha256((sec + ':' + r).encode()).hexdigest()[:6].upper()}" for r, pre in ROLES.items()}
     CLES.write_text(json.dumps({r: code_hash(k) for r, k in keys.items()}, indent=1) + "\n")
     (PRIVATE / "cles-ecole.txt").write_text("".join(f"{r} : {k}\n" for r, k in keys.items()))
-    (PRIVATE / "firestore.rules").write_text(RULES.replace("SECRET", sec))
+    (PRIVATE / "firestore.rules").write_text(rules_texte(sec))
     print(f"Clés d'entrée écrites dans {PRIVATE / 'cles-ecole.txt'}")
 
 
