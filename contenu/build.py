@@ -38,6 +38,7 @@ from questions import CLASSES, FAMILIES, FREE, LEVELS, SERIES, SUBJECTS
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT.parent / "docs" / "data"
 HASHES = ROOT / "code_hashes.txt"
+CLES = ROOT / "cles_ecole.json"  # hachages des clés d'entrée professeur et directeur
 SALT = "racine-school:"
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # sans 0/O ni 1/I
 
@@ -95,6 +96,50 @@ service cloud.firestore {
       allow read, update, delete: if false;
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid && validCode(code);
     }
+
+    // ---------- Espace école : professeurs et direction
+    function signedIn() { return request.auth != null; }
+    function staffRole() {
+      let p = /databases/$(db)/documents/staff/$(request.auth.uid);
+      return signedIn() && exists(p) ? get(p).data.role : '';
+    }
+    function isDir() { return staffRole() == 'directeur'; }
+    function isStaff() { return staffRole() == 'directeur' || staffRole() == 'prof'; }
+    // clé d'entrée = préfixe + « - » + 6 caractères tirés du secret et du rôle
+    function validKey(role, cle) {
+      let p = cle.split('-');
+      return p.size() == 2 && p[1].lower() == hashing.sha256('SECRET:' + role).toHexString().lower()[0:6];
+    }
+    // un professeur ou le directeur s'inscrit avec sa clé d'entrée ; le directeur voit toute l'équipe
+    match /staff/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isDir());
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.role in ['directeur', 'prof']
+        && validKey(request.resource.data.role, request.resource.data.cle);
+      allow delete: if isDir();
+    }
+    // fiche d'inscription : l'élève écrit la sienne, l'équipe de l'école la lit
+    match /eleves/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isStaff());
+      allow create, update: if signedIn() && request.auth.uid == uid && request.resource.size() < 400000;
+      allow delete: if isDir();
+    }
+    // paiements de scolarité : tenus par la direction, l'élève voit les siens
+    match /paiements/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isDir());
+      allow write: if isDir();
+    }
+    // devoirs publiés par les professeurs pour une classe
+    match /devoirs/{id} {
+      allow read: if signedIn();
+      allow create: if isStaff() && request.resource.data.par == request.auth.uid;
+      allow update, delete: if isDir() || (isStaff() && resource.data.par == request.auth.uid);
+    }
+    // classes, mensualités, année scolaire : réglés par la direction
+    match /ecole/{doc} {
+      allow read: if signedIn();
+      allow write: if isDir();
+    }
   }
 }
 """
@@ -129,6 +174,19 @@ def new_codes(n, dest):
         f.writelines(c + "\n" for c in codes)
     (PRIVATE / "firestore.rules").write_text(RULES.replace("SECRET", sec))
     print(f"{n} codes ajoutés dans {dest}")
+
+
+ROLES = {"directeur": "DIR", "prof": "PROF"}
+
+
+def new_keys():
+    """Clés d'entrée de l'espace école : une pour la direction, une pour les professeurs (tirées du secret)."""
+    sec = secret()
+    keys = {r: f"{pre}-{hashlib.sha256((sec + ':' + r).encode()).hexdigest()[:6].upper()}" for r, pre in ROLES.items()}
+    CLES.write_text(json.dumps({r: code_hash(k) for r, k in keys.items()}, indent=1) + "\n")
+    (PRIVATE / "cles-ecole.txt").write_text("".join(f"{r} : {k}\n" for r, k in keys.items()))
+    (PRIVATE / "firestore.rules").write_text(RULES.replace("SECRET", sec))
+    print(f"Clés d'entrée écrites dans {PRIVATE / 'cles-ecole.txt'}")
 
 
 def _norm(s):
@@ -203,7 +261,8 @@ def build():
     hashes = HASHES.read_text().split() if HASHES.exists() else []
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "questions.json").write_text(json.dumps({"classes": CLASSES, "series": SERIES, "families": FAMILIES, "levels": LEVELS, "subjects": subjects, "questions": questions, "annales": ANNALES, "annalesHost": HOST, "library": LIBRARY, "libraryHost": LIB_HOST, "fiches": FICHES, "exercises": exercises, "notions": notions, "devoirs": DEVOIRS, "programmes": {k: [t for t, _ in v] for k, v in PROGRAMMES.items()}}, ensure_ascii=False, separators=(",", ":")))
-    (OUT / "config.json").write_text(json.dumps({**CONFIG, "salt": SALT, "codes": hashes}, ensure_ascii=False, separators=(",", ":")))
+    cles = json.loads(CLES.read_text()) if CLES.exists() else {}
+    (OUT / "config.json").write_text(json.dumps({**CONFIG, "salt": SALT, "codes": hashes, "cles": cles}, ensure_ascii=False, separators=(",", ":")))
     print(f"{len(questions)} questions, {len(subjects)} matières, {len(hashes)} codes")
 
 
@@ -211,7 +270,10 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--codes", type=int, default=0)
     p.add_argument("--dest", default="/mnt/project-files/racine-school/prive/codes-premium.txt")
+    p.add_argument("--cles", action="store_true", help="écrit les clés d'entrée professeur et directeur")
     args = p.parse_args()
+    if args.cles:
+        new_keys()
     if args.codes:
         new_codes(args.codes, args.dest)
     build()

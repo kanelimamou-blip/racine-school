@@ -29,7 +29,7 @@ if (!S.trialStart) { S.trialStart = today(); store.save(); }
 const trialLeft = () => Math.max(0, TRIAL_DAYS - Math.floor((new Date(today()) - new Date(S.trialStart)) / 864e5));
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
-const isPremium = () => S.premium || trialLeft() > 0;
+const isPremium = () => S.premium || trialLeft() > 0 || isStaff();
 const open = (q) => isPremium() || q.free;
 const qsOf = (sid) => DATA.questions.filter((q) => q.s === sid);
 // Tirage sans répétition : d'abord les questions jamais vues, puis celles ratées, puis les plus anciennes ;
@@ -149,6 +149,7 @@ function viewHome() {
         : `<div><p class="small muted">Réponses données</p><p class="count">${answered}</p></div>`}
       <div style="text-align:right"><p class="small muted">Série en cours</p><p class="count">${streak()} 🔥</p></div></div>
     </div>
+    ${ficheCard()}
     ${agendaCard()}
     ${tutoCard()}
     ${programme()}
@@ -600,7 +601,7 @@ function viewProgress() {
   const good = Object.values(S.stats).reduce((n, s) => n + s.ok, 0);
   const rows = subjectsOf(S.level).map((s) => `<div><div class="row small"><span>${esc(s.name)}</span><b>${mastery(s.id)} %</b></div><div class="bar"><i style="width:${mastery(s.id)}%"></i></div></div>`).join("");
   const last = S.sessions.slice(-8).reverse().map((x) => `<div class="row small"><span>${esc(x.t)}<br><span class="muted">${x.d}</span></span><b>${Math.round((200 * x.score) / x.total) / 10} / 20</b></div>`).join("");
-  $view.innerHTML = `<h1>Mes progrès</h1>
+  $view.innerHTML = `<h1>Mes progrès</h1>${ficheCard()}
     <div class="card"><div class="row"><div><p class="small muted">Réponses</p><p class="count">${answered}</p></div>
       <div><p class="small muted">Réussite</p><p class="count">${answered ? Math.round((100 * good) / answered) : 0} %</p></div>
       <div><p class="small muted">Série</p><p class="count">${streak()} 🔥</p></div></div></div>
@@ -720,8 +721,16 @@ function render() {
   clearInterval(timer);
   // hors connexion (Firebase injoignable), l'appli reste utilisable en local
   if (Compte.enabled && Compte.ready && !Compte.user) return viewLogin();
-  const [tab, arg] = (location.hash.slice(1) || "accueil").split("/");
+  const [tab, arg] = (location.hash.slice(1) || (isStaff() ? "ecole" : "accueil")).split("/");
   document.getElementById("exam-tag").textContent = S.level || "";
+  // onglets selon le profil : l'équipe de l'école a son espace à la place des erreurs et du premium
+  document.querySelectorAll(".tabs a").forEach((a) => { a.hidden = isStaff() ? ["erreurs", "premium"].includes(a.dataset.tab) : a.dataset.tab === "ecole"; });
+  // profil et fiche d'inscription d'abord, puis l'espace école (qui ne dépend pas d'une classe)
+  document.querySelector(".tabs").hidden = !S.role;
+  if (!S.role) return viewRole();
+  if (S.role === "eleve" && !S.fiche && tab !== "classe") return viewInscription();
+  if (tab === "inscription" && S.role === "eleve") return viewInscription();
+  if (tab === "ecole" && isStaff()) { document.querySelectorAll(".tabs a").forEach((a) => { if (a.dataset.tab === "ecole") a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); }); return viewEcole(); }
   if ((!S.level || !DATA.levels.includes(S.level)) && tab !== "classe") { S.level = null; return viewLevel(); }
   document.querySelectorAll(".tabs a").forEach((a) => { if (a.dataset.tab === tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   ({ classe: viewLevel, annales: viewAnnales, exercices: viewExercices, "qcm-list": viewQcmList, devoir: () => viewDevoir(arg), duo: () => viewDuo(arg), challenge: viewChallenge, fiches: viewFiches, fiche: () => viewFiche(arg), assistant: viewAssistant, agenda: () => viewAgenda(arg), notions: viewNotions, notion: () => viewNotion(arg), sujet: () => viewGuided(arg), quiz: () => viewQuiz(arg), examen: viewExam, erreurs: viewErrors, progres: viewProgress, premium: () => viewPremium() }[tab] || viewHome)();
@@ -735,5 +744,5 @@ document.getElementById("install").onclick = () => { if (deferred) { deferred.pr
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
 Promise.all([fetch("data/questions.json", { cache: "no-cache" }).then((r) => r.json()), fetch("data/config.json", { cache: "no-cache" }).then((r) => r.json())])
-  .then(async ([d, c]) => { DATA = d; CFG = c; applyProfile(await Compte.start().catch(() => null)); render(); })
+  .then(async ([d, c]) => { DATA = d; CFG = c; applyProfile(await Compte.start().catch(() => null)); await ecoleStart().catch(() => {}); render(); })
   .catch(() => { $view.innerHTML = `<div class="card"><p>Impossible de charger les questions. Vérifie ta connexion puis recharge la page.</p></div>`; });

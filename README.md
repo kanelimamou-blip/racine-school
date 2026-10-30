@@ -17,3 +17,7 @@ Pendant les 10 premiers jours (essai gratuit, `TRIAL_DAYS` dans `docs/app.js`), 
 ## Comptes
 
 `docs/compte.js` : connexion Google (Firebase Auth) et profil Firestore (date de création fixée par le serveur pour l'essai, premium accordé seulement si le code est réclamé une seule fois, progrès sauvegardés). Tant que `FIREBASE_CONFIG` est vide, l'appli fonctionne sans compte.
+
+## Espace école (Racine School)
+
+`docs/ecole.js` : au premier lancement, on choisit son profil. L'élève remplit sa fiche d'inscription (identité, classe, téléphones, WhatsApp, parent, photo). Le professeur et la direction entrent leur clé d'entrée (`python contenu/build.py --cles` l'écrit hors du dépôt, avec les règles Firestore). La direction voit les effectifs par classe, les progrès, les paiements de scolarité et les relances WhatsApp ; les professeurs publient des devoirs qui arrivent dans l'agenda des élèves de la classe. Sans Firebase, tout reste sur le téléphone et la direction peut charger des élèves de démonstration.
